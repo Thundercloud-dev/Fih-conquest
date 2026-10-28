@@ -1,0 +1,197 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FIH Conquest - Supabase</title>
+</head>
+<body>
+  <h1>FIH Conquest</h1>
+
+  <h2>Create Account / Sign In</h2>
+
+  <input id="email" type="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Password">
+
+  <input id="username" type="text" placeholder="Username (new accounts)">
+
+  <button id="signup">Create Account</button>
+  <button id="login">Sign In</button>
+  <button id="logout">Sign Out</button>
+
+  <h2>Player Progress</h2>
+  <pre id="progress">Not signed in.</pre>
+  <p id="message"></p>
+
+  <script type="module">
+    import { createClient } from
+      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL =
+      'https://ucxustzrevjlktcfsmfy.supabase.co';
+
+    const SUPABASE_KEY =
+      'sb_publishable_DlflO5eJAotVhCv-q16Ceg_-fWZQ8Kr';
+
+    const supabase = createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
+    );
+
+    const message = document.getElementById('message');
+    const progress = document.getElementById('progress');
+
+    function showMessage(text) {
+      message.textContent = text;
+    }
+
+    // Create a new account
+    document.getElementById('signup').onclick = async () => {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const username = document.getElementById('username').value.trim();
+
+      if (!email || !password) {
+        showMessage('Enter your email and password.');
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password
+        });
+
+        if (error) throw error;
+
+        if (data.user && data.session) {
+          if (username) {
+            const { error: nameError } = await supabase.rpc(
+              'fih_set_username',
+              { p_username: username }
+            );
+            if (nameError) throw nameError;
+          }
+
+          showMessage('Account created! You are signed in.');
+          await loadProgress();
+        } else {
+          showMessage(
+            'Check your email to confirm your account, then sign in.'
+          );
+        }
+      } catch (error) {
+        showMessage(error.message);
+      }
+    };
+
+    // Sign in to an existing account
+    document.getElementById('login').onclick = async () => {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) throw error;
+
+        showMessage('Signed in successfully!');
+        await loadProgress();
+      } catch (error) {
+        showMessage(error.message);
+      }
+    };
+
+    // Sign out
+    document.getElementById('logout').onclick = async () => {
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        showMessage(error.message);
+        return;
+      }
+
+      progress.textContent = 'Not signed in.';
+      showMessage('Signed out.');
+    };
+
+    // Load saved player data
+    async function loadProgress() {
+      try {
+        const { data: userData, error: userError } =
+          await supabase.auth.getUser();
+
+        if (userError) throw userError;
+
+        const user = userData.user;
+
+        if (!user) {
+          progress.textContent = 'Not signed in.';
+          return;
+        }
+
+        const [
+          { data: profile, error: profileError },
+          { data: state, error: stateError },
+          { data: inventory, error: inventoryError }
+        ] = await Promise.all([
+          supabase.from('fih_profiles')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle(),
+
+          supabase.from('fih_player_state')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle(),
+
+          supabase.from('fih_inventory')
+            .select('fish_type, quantity')
+            .eq('user_id', user.id)
+        ]);
+
+        if (profileError) throw profileError;
+        if (stateError) throw stateError;
+        if (inventoryError) throw inventoryError;
+
+        progress.textContent = JSON.stringify({
+          email: user.email,
+          username: profile?.username ?? '(not set)',
+          coins: state?.coins ?? 100,
+          xp: state?.xp ?? 0,
+          level: state?.level ?? 1,
+          inventory: inventory ?? []
+        }, null, 2);
+
+        showMessage('Saved progress loaded.');
+      } catch (error) {
+        showMessage('Could not load progress: ' + error.message);
+      }
+    }
+
+    // Restore the existing login session when the page opens
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session) {
+      await loadProgress();
+    }
+
+    // Update progress after authentication changes
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        progress.textContent = 'Not signed in.';
+      } else if (event === 'SIGNED_IN') {
+        // Avoid database calls directly inside this callback.
+        setTimeout(() => loadProgress(), 0);
+      }
+    });
+
+    // Make the client available to additional game modules.
+    window.fihSupabase = supabase;
+  </script>
+</body>
+</html>
