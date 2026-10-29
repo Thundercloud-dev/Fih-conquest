@@ -262,11 +262,46 @@ function drawWarship(x, y, type, color, angle) {
   g.strokeStyle = '#d6d4c7'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(5, -6); g.lineTo(13, -11); g.stroke();
   g.restore();
 }
+// A wooden rod, metal guides, a small reel and a taut line from its tip.
+function drawFishingRod(x, y, angle, casting, now) {
+  g.save(); g.translate(x, y); g.rotate(angle || 0);
+  g.lineCap = 'round';
+  g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(4, -5); g.lineTo(27, -19); g.stroke();
+  g.strokeStyle = '#8c5b32'; g.lineWidth = 3.5;
+  g.beginPath(); g.moveTo(3, -7); g.quadraticCurveTo(17, -14, 29, -23); g.stroke();
+  g.strokeStyle = '#d6b17a'; g.lineWidth = 1.1;
+  g.beginPath(); g.moveTo(7, -10); g.lineTo(26, -21); g.stroke();
+  for (const [gx, gy] of [[12,-12],[20,-17],[27,-22]]) {
+    g.fillStyle = '#c9d0c6'; g.beginPath(); g.arc(gx, gy, 2, 0, Math.PI*2); g.fill();
+  }
+  g.fillStyle = '#b8b9ad'; g.beginPath(); g.ellipse(5,-5,4,5,-.4,0,Math.PI*2); g.fill();
+  g.fillStyle = '#394a4c'; g.beginPath(); g.arc(5,-5,2,0,Math.PI*2); g.fill();
+  g.restore();
+  if (casting) {
+    const tipX = x + Math.cos(angle) * 29 + Math.sin(angle) * 23;
+    const tipY = y + Math.sin(angle) * 29 - Math.cos(angle) * 23;
+    const bobX = x + Math.cos(angle) * 88, bobY = y + Math.sin(angle) * 88 + 12;
+    g.strokeStyle = 'rgba(240,246,231,.88)'; g.lineWidth = 1.4;
+    g.beginPath(); g.moveTo(tipX, tipY); g.quadraticCurveTo((tipX+bobX)/2, (tipY+bobY)/2-9, bobX, bobY); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,.42)'; g.lineWidth = 1;
+    g.beginPath(); g.ellipse(bobX,bobY+2,10+Math.sin(now/180)*2,3,0,0,Math.PI*2); g.stroke();
+    g.fillStyle = '#dce6d7'; g.beginPath(); g.ellipse(bobX,bobY,3.5,5,.15,0,Math.PI*2); g.fill();
+    g.fillStyle = casting && fs?.ph === 'bite' ? '#ff5b4d' : '#e6c65f';
+    g.beginPath(); g.arc(bobX,bobY-2,3.3,0,Math.PI*2); g.fill();
+    if (casting && fs?.ph === 'bite') {
+      g.strokeStyle = '#fff4cf'; g.lineWidth = 2;
+      g.beginPath(); g.arc(bobX,bobY-2,8+Math.sin(now/45)*2,0,Math.PI*2); g.stroke();
+    }
+  }
+}
 function draw(t) {
   const W = cv.width, Hh = cv.height; camx = P.x - W / 2; camy = P.y - Hh / 2;
   g.fillStyle = '#1e90c8'; g.fillRect(0, 0, W, Hh);
   g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2;
   for (let y = -(camy % 60) - 60; y < Hh; y += 60) { g.beginPath(); for (let x = 0; x <= W; x += 40) g.lineTo(x, y + Math.sin((x + camx) / 50 + t / 700 + y) * 6); g.stroke(); }
+  // Slightly angled map presentation gives the world a subtle tabletop feel.
+  g.save(); g.translate(W / 2, Hh / 2); g.rotate(-0.018); g.translate(-W / 2, -Hh / 2);
   for (const i of isl) {
     const x = i.wx - camx, y = i.wy - camy;
     if (x < -200 || y < -200 || x > W + 200 || y > Hh + 200) continue;
@@ -282,15 +317,12 @@ function draw(t) {
     g.fillStyle = '#fff'; g.fillRect(x - 2, y - 40, 4, 40); g.fillStyle = flagCol(i.row.owner_id); g.fillRect(x + 2, y - 40, 26, 16);
     text(i.row.name, x, y - 52, 15);
   }
-  if (fs) {                                           // fishing line and bobber
-    const bx = P.x + Math.cos(P.a) * 60 - camx, by = P.y + Math.sin(P.a) * 60 - camy;
-    g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.moveTo(P.x - camx, P.y - camy); g.lineTo(bx, by); g.stroke();
-    circle(bx, by, 6, fs.ph === 'bite' ? '#ff3b3b' : '#fff');
-    if (fs.ph === 'bite') text('!', bx, by - 14, 26, '#ff3b3b');
-  }
   const now = performance.now();
   for (const r of Object.values(remotes)) drawPlayer(r, now);
   drawPlayer({...P, e: now < P.eUntil ? P.e : ''}, now);
+  // Keep the rod visible in the player's hand; cast line and float animate when fishing.
+  drawFishingRod(P.x - camx, P.y - camy, P.a, !!fs, now);
+  g.restore();
   pops = pops.filter(p => now - p.t < 1500);
   for (const p of pops) text(p.text, p.x - camx, p.y - camy - (now - p.t) / 25, 16, p.c);
   const mx = W - 190, my = Hh - 126, k = .055, mp = (x, y) => [mx + (x + 1500) * k, my + (y + 1100) * k];   // minimap
