@@ -35,6 +35,7 @@ let P = {x:0, y:0, a:0, boat:false, e:'', eUntil:0, say:'', sayUntil:0, n:'', c:
 let keys = {}, fs = null, busy = false, lastFish = 0, lastChat = 0, pops = [], camx = 0, camy = 0;
 let development = {materials:25, buildings:{}, discovered:[], resources:{wood:0,fish:0,stone:0,food:0}, lastResourceAt:Date.now()};
 let developmentSyncReady = false, developmentSaveTimer = null, developmentLoading = false;
+let aquariumPage = 0; // Show a small page of fish at a time to keep the collection panel stable.
 const devKey = () => 'fih-conquest-development-v1:' + me.id;
 function normalizeDevelopment(d) {
   return {materials:Math.max(0,Number(d?.materials ?? 25)||0),buildings:d?.buildings&&typeof d.buildings==='object'?d.buildings:{},discovered:Array.isArray(d?.discovered)?d.discovered.filter(n=>FISH_CATALOG.includes(n)):[],resources:{wood:Math.max(0,Number(d?.resources?.wood)||0),fish:Math.max(0,Number(d?.resources?.fish)||0),stone:Math.max(0,Number(d?.resources?.stone)||0),food:Math.max(0,Number(d?.resources?.food)||0)},lastResourceAt:Number(d?.lastResourceAt)||Date.now()};
@@ -214,7 +215,14 @@ function render() {
     const aqLevel = owned.reduce((n,i) => n + (islandBuilds(i.row.id).aquarium || 0), 0);
     const discovered = new Set(development.discovered);
     h = '<h3>Aquarium Collection</h3><p><b>Discovered:</b> ' + discovered.size + ' / ' + FISH_CATALOG.length + ' species</p><p><small>Catch fish to discover new species. Rare and legendary discoveries give extra building materials.</small></p><div class="row"><span>Common</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Common' && discovered.has(n)).length + ' / 20</b></div><div class="row"><span>Uncommon</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Uncommon' && discovered.has(n)).length + ' / 30</b></div><div class="row"><span>Rare</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Rare' && discovered.has(n)).length + ' / 30</b></div><div class="row"><span>Legendary</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Legendary' && discovered.has(n)).length + ' / 20</b></div><p><small>Aquarium levels built on your islands: ' + aqLevel + '</small></p>';
-    h += FISH_CATALOG.map((name,i) => '<div class="row"><span>' + (discovered.has(name) ? '🐟 ' + name : '🔒 Unknown species #' + (i+1)) + '</span><small>' + (discovered.has(name) ? FISH_RARITY[name] : 'Not discovered') + '</small></div>').join('');
+    const aqPageSize = 20, aqPages = Math.ceil(FISH_CATALOG.length / aqPageSize);
+    aquariumPage = Math.max(0, Math.min(aquariumPage, aqPages - 1));
+    const aqStart = aquariumPage * aqPageSize;
+    h += '<div class="row"><button class="alt" data-aq-page="-1" ' + (aquariumPage === 0 ? 'disabled' : '') + '>Previous</button><span>Page ' + (aquariumPage + 1) + ' / ' + aqPages + '</span><button class="alt" data-aq-page="1" ' + (aquariumPage >= aqPages - 1 ? 'disabled' : '') + '>Next</button></div>';
+    h += FISH_CATALOG.slice(aqStart, aqStart + aqPageSize).map((name,offset) => {
+      const i = aqStart + offset;
+      return '<div class="row"><span>' + (discovered.has(name) ? '🐟 ' + name : '🔒 Unknown species #' + (i+1)) + '</span><small>' + (discovered.has(name) ? FISH_RARITY[name] : 'Not discovered') + '</small></div>';
+    }).join('');
   }
   if (tab === 'fleet') {
     const owned = isl.filter(i => i.row.owner_id === me.id);
@@ -242,6 +250,7 @@ async function sell(f, q) {
 if ($('panel')) $('panel').onclick = async e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'cl') { tab = null; return render(); }
+  if (b.dataset.aqPage) { aquariumPage = Math.max(0, aquariumPage + Number(b.dataset.aqPage)); return render(); }
   if (b.id === 'lo') return sb.auth.signOut();
   if (b.dataset.build) {
     const island = here();
@@ -526,7 +535,7 @@ function draw(t) {
     g.fillStyle = BIO[i.row.biome] || '#4caf50'; g.fillRect(x-radius-2,y-radius-2,radius*2+4,radius*2+4);
     // Terrain patches create visual variety across much larger islands.
     const rng = seededRandom(i.seed || hash(i.row.id || i.key || i.row.name));
-    for (let patch=0;patch<30;patch++) {
+    for (let patch=0;patch<14;patch++) {
       const px=x+(rng()-.5)*radius*1.65, py=y+(rng()-.5)*radius*1.35, pr=8+rng()*radius*.12;
       circle(px,py,pr, patch%3===0?'rgba(230,213,135,.20)':patch%3===1?'rgba(35,99,52,.22)':'rgba(255,255,255,.07)');
     }
@@ -565,7 +574,7 @@ function draw(t) {
     }
     if (!i.palms.length) {
       const rng = seededRandom(i.seed || hash(i.row.id || i.key || i.row.name));
-      const count = i.generated ? 25 + Math.floor(rng()*40) : 12;
+      const count = i.generated ? 18 + Math.floor(rng()*18) : 10;
       for(let n=0;n<count;n++) {
         const a=rng()*Math.PI*2, d=Math.sqrt(rng())*radius*.78;
         i.palms.push([Math.cos(a)*d,Math.sin(a)*d*.76]);
