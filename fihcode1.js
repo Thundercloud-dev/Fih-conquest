@@ -37,7 +37,7 @@ let development = {materials:25, buildings:{}, discovered:[], resources:{wood:0,
 let developmentSyncReady = false, developmentSaveTimer = null, developmentLoading = false;
 const devKey = () => 'fih-conquest-development-v1:' + me.id;
 function normalizeDevelopment(d) {
-  return {materials:Math.max(0,Number(d?.materials)||0),buildings:d?.buildings&&typeof d.buildings==='object'?d.buildings:{},discovered:Array.isArray(d?.discovered)?d.discovered.filter(n=>FISH_CATALOG.includes(n)):[],resources:{wood:Math.max(0,Number(d?.resources?.wood)||0),fish:Math.max(0,Number(d?.resources?.fish)||0),stone:Math.max(0,Number(d?.resources?.stone)||0),food:Math.max(0,Number(d?.resources?.food)||0)},lastResourceAt:Number(d?.lastResourceAt)||Date.now()};
+  return {materials:Math.max(0,Number(d?.materials ?? 25)||0),buildings:d?.buildings&&typeof d.buildings==='object'?d.buildings:{},discovered:Array.isArray(d?.discovered)?d.discovered.filter(n=>FISH_CATALOG.includes(n)):[],resources:{wood:Math.max(0,Number(d?.resources?.wood)||0),fish:Math.max(0,Number(d?.resources?.fish)||0),stone:Math.max(0,Number(d?.resources?.stone)||0),food:Math.max(0,Number(d?.resources?.food)||0)},lastResourceAt:Number(d?.lastResourceAt)||Date.now()};
 }
 function saveDevelopment() {
   if (!me) return;
