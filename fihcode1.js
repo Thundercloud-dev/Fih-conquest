@@ -4,7 +4,7 @@ import {createClient} from '@supabase/supabase-js';
 const SUPABASE_URL = 'https://ucxustzrevjlktcfsmfy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_DlflO5eJAotVhCv-q16Ceg_-fWZQ8Kr';
 const SCALE = 28, LAND = 390, SHORE = 435; // larger landmasses; distances remain in world units
-const WORLD_LIMIT_X = 9000, WORLD_LIMIT_Y = 6500;
+const WORLD_LIMIT_X = 1000000000, WORLD_LIMIT_Y = 1000000000;
 const CHUNK_SIZE = 1900, GENERATED_ISLANDS_PER_CHUNK = 4;
 const GENERATED_BIOMES = ['tropical','reef','mist','beach','rocky','remote'];
 const PRICE = {Sardine:4, Mackerel:7, Clownfish:10, Tuna:18, 'Golden Koi':35}; // display only, the database sets real prices
@@ -127,7 +127,8 @@ function render() {
     }).join('') + `<p><button data-all="1" ${total ? '' : 'disabled'}>Sell every fish</button></p>`;
   }
   if (tab === 'map') {
-    h = '<h3>Island conquest</h3><small>Stand on a settled island to claim it. Explore generated islands beyond the known world.</small>' + isl.map(i => {
+    const settledIslands = isl.filter(i => !i.generated);
+    h = '<h3>Island conquest</h3><small>Stand on a settled island to claim it. The ocean beyond them is procedurally generated for exploration.</small>' + settledIslands.map(i => {
       const o = i.row.owner_id, cost = i.row.claim_cost;
       const act = i.generated ? '<small>Uncharted · explore</small>' : (o ? '' : (here() === i ? `<button data-c="${i.row.id}" ${st.coins < cost ? 'disabled' : ''}>Claim</button>` : '<small>Sail there</small>'));
       return `<div class="row"><span><b>${i.row.name}</b> <small>${i.row.biome}, ${cost ? cost + ' coins' : 'free'}</small><br><small>${o ? 'Owner: ' + nm(o) : 'Unclaimed'}</small></span>${act}</div>`;
@@ -305,9 +306,11 @@ function ensureWorldAround(x, y) {
       const biome = GENERATED_BIOMES[Math.floor(rand()*GENERATED_BIOMES.length)];
       const size = .75 + rand()*.9;
       const seed = Math.floor(rand()*1e9);
-      isl.push({key:key+':'+n,worldKey:key,row:{id:key+':'+n,name:['Driftwood Isle','Northwind Reach','Silver Shoal','Whisper Cay','Stormglass Key','Tidewatch','Seafarer’s Rest','Bluehaven'][Math.floor(rand()*8)],biome,x:wx,y:wy,claim_cost:0,owner_id:null,generated:true},wx,wy,generated:true,size,seed,palms:[],worldKey:key});
+      isl.push({key:key+':'+n,worldKey:key,row:{id:key+':'+n,name:['Driftwood Isle','Northwind Reach','Silver Shoal','Whisper Cay','Stormglass Key','Tidewatch','Seafarer’s Rest','Bluehaven'][Math.floor(rand()*8)],biome,x:wx,y:wy,claim_cost:0,owner_id:null,generated:true},wx,wy,generated:true,size,seed,palms:[]});
     }
   }
+  // Keep only nearby procedural chunks loaded; distant terrain regenerates deterministically when revisited.
+  isl = isl.filter(i => !i.generated || (Math.abs(i.wx-x) <= CHUNK_SIZE*4 && Math.abs(i.wy-y) <= CHUNK_SIZE*4));
 }
 function shapeIsland(i, x, y, now) {
   const r = islandRadius(i), seed = i.seed || hash(i.row.id || i.key || i.row.name);
