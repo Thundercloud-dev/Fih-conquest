@@ -295,6 +295,41 @@ function drawFishingRod(x, y, angle, casting, now) {
     }
   }
 }
+// Small settlement and harbor details make claimed islands read like territories.
+function drawIslandSettlement(x, y, ownerId) {
+  const owned = !!ownerId;
+  const flag = flagCol(ownerId);
+  // A low-contrast territorial boundary follows the island's interior coast.
+  if (owned) {
+    g.save();
+    g.strokeStyle = flag;
+    g.globalAlpha = ownerId === me?.id ? 0.72 : 0.48;
+    g.lineWidth = 3;
+    g.setLineDash([9, 7]);
+    g.beginPath(); g.arc(x, y, LAND - 34, 0, Math.PI * 2); g.stroke();
+    g.setLineDash([]);
+    g.restore();
+  }
+  // Main hall and two cottages, drawn as tiny top-down buildings.
+  const buildings = [[-20, 12, 17, 13], [4, 2, 13, 11], [17, 21, 12, 10]];
+  for (let n = 0; n < buildings.length; n++) {
+    const [bx, by, bw, bh] = buildings[n];
+    g.fillStyle = 'rgba(32,31,25,.42)'; g.fillRect(x + bx - 2, y + by + 2, bw + 4, bh + 3);
+    g.fillStyle = n === 0 && owned ? '#d8c46a' : '#d8c3a0';
+    g.fillRect(x + bx, y + by, bw, bh);
+    g.fillStyle = '#6b4530';
+    g.beginPath(); g.moveTo(x + bx - 2, y + by + 2); g.lineTo(x + bx + bw / 2, y + by - 5); g.lineTo(x + bx + bw + 2, y + by + 2); g.closePath(); g.fill();
+    g.fillStyle = '#5b4532'; g.fillRect(x + bx + bw / 2 - 2, y + by + bh - 6, 4, 6);
+  }
+  // A short wooden pier at the east coast, with a small mooring post.
+  g.save(); g.translate(x + 103, y + 28); g.rotate(-0.22);
+  g.fillStyle = '#76502e'; g.fillRect(-3, -8, 42, 15);
+  g.strokeStyle = '#bd8a52'; g.lineWidth = 2;
+  for (let px = 2; px < 37; px += 8) { g.beginPath(); g.moveTo(px, -7); g.lineTo(px, 6); g.stroke(); }
+  g.fillStyle = '#4a3927'; g.fillRect(34, -12, 5, 23);
+  g.restore();
+}
+
 function draw(t) {
   const W = cv.width, Hh = cv.height; camx = P.x - W / 2; camy = P.y - Hh / 2;
   g.fillStyle = '#1e90c8'; g.fillRect(0, 0, W, Hh);
@@ -306,6 +341,7 @@ function draw(t) {
     const x = i.wx - camx, y = i.wy - camy;
     if (x < -200 || y < -200 || x > W + 200 || y > Hh + 200) continue;
     circle(x, y, SHORE, '#e8d27a'); circle(x, y, LAND - 25, BIO[i.row.biome] || '#4caf50');
+    drawIslandSettlement(x, y, i.row.owner_id);
     for (const p of i.palms) { circle(x + p[0], y + p[1], 19, '#2e8b3a'); circle(x + p[0], y + p[1], 6, '#8a5a2b'); }
     if (i.row.owner_id) {
       const ownerColor = i.row.owner_id === me.id ? '#d8c46a' : '#a95a50';
