@@ -1,12 +1,11 @@
 import {createClient} from '@supabase/supabase-js';
+import { ISLAND_SETTINGS } from './island-settings.js';
+import { createIslandWorld, seededRandom } from './island-world.js';
 
 /* ================= SETTINGS ================= */
 const SUPABASE_URL = 'https://ucxustzrevjlktcfsmfy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_DlflO5eJAotVhCv-q16Ceg_-fWZQ8Kr';
-const SCALE = 28, LAND = 390, SHORE = 435; // larger landmasses; distances remain in world units
-const WORLD_LIMIT_X = 1000000000, WORLD_LIMIT_Y = 1000000000;
-const CHUNK_SIZE = 1900, GENERATED_ISLANDS_PER_CHUNK = 4;
-const GENERATED_BIOMES = ['tropical','reef','mist','beach','rocky','remote'];
+const {scale:SCALE, landRadius:LAND, shoreRadius:SHORE, worldLimitX:WORLD_LIMIT_X, worldLimitY:WORLD_LIMIT_Y} = ISLAND_SETTINGS;
 const PRICE = {Sardine:4, Mackerel:7, Clownfish:10, Tuna:18, 'Golden Koi':35}; // display only, the database sets real prices
 const FCOL = {Sardine:'#9fb7c9', Mackerel:'#5fa8d3', Clownfish:'#ff8c42', Tuna:'#e74c3c', 'Golden Koi':'#ffd700'};
 const RARE = ['Tuna', 'Golden Koi'];
@@ -345,47 +344,18 @@ function join() {
 }
 
 
-/* ================= PROCEDURAL WORLD =================
-   Seeded chunks are generated locally around the player. Existing Supabase islands
-   remain the shared/claimable starter locations; generated islands are personal
-   exploration landforms until a server-side world table is added. */
-function seededRandom(seed) {
-  let a = seed >>> 0;
-  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-}
-function chunkSeed(cx, cy) { return (Math.imul(cx + 12000, 73856093) ^ Math.imul(cy + 12000, 19349663) ^ 0x51F1C0DE) >>> 0; }
-function ensureWorldAround(x, y) {
-  const cx = Math.floor(x / CHUNK_SIZE), cy = Math.floor(y / CHUNK_SIZE);
-  const radius = 2;
-  for (let dx=-radius; dx<=radius; dx++) for (let dy=-radius; dy<=radius; dy++) {
-    const gx=cx+dx, gy=cy+dy;
-    if (Math.abs(gx*CHUNK_SIZE) > WORLD_LIMIT_X || Math.abs(gy*CHUNK_SIZE) > WORLD_LIMIT_Y) continue;
-    const key = 'gen:' + gx + ':' + gy;
-    if (isl.some(i => i.worldKey === key)) continue;
-    const rand = seededRandom(chunkSeed(gx,gy));
-    for (let n=0; n<GENERATED_ISLANDS_PER_CHUNK; n++) {
-      const wx = gx*CHUNK_SIZE + (rand()-.5)*CHUNK_SIZE*.8;
-      const wy = gy*CHUNK_SIZE + (rand()-.5)*CHUNK_SIZE*.8;
-      if (isl.some(i => Math.hypot(i.wx-wx,i.wy-wy) < 900)) continue;
-      const biome = GENERATED_BIOMES[Math.floor(rand()*GENERATED_BIOMES.length)];
-      const size = .75 + rand()*.9;
-      const seed = Math.floor(rand()*1e9);
-      isl.push({key:key+':'+n,worldKey:key,row:{id:key+':'+n,name:['Driftwood Isle','Northwind Reach','Silver Shoal','Whisper Cay','Stormglass Key','Tidewatch','Seafarer’s Rest','Bluehaven'][Math.floor(rand()*8)],biome,x:wx,y:wy,claim_cost:0,owner_id:null,generated:true},wx,wy,generated:true,size,seed,palms:[]});
-    }
-  }
-  // Keep only nearby procedural chunks loaded; distant terrain regenerates deterministically when revisited.
-  isl = isl.filter(i => !i.generated || (Math.abs(i.wx-x) <= CHUNK_SIZE*4 && Math.abs(i.wy-y) <= CHUNK_SIZE*4));
-}
-function shapeIsland(i, x, y, now) {
-  const r = islandRadius(i), seed = i.seed || hash(i.row.id || i.key || i.row.name);
-  const points = 18, noise = (a) => 1 + .085*Math.sin(a*3+seed*.001) + .055*Math.cos(a*5+seed*.0007) + .035*Math.sin(a*9+seed*.002);
-  g.beginPath();
-  for (let n=0;n<=points;n++) {
-    const a=n/points*Math.PI*2, d=r*noise(a), px=x+Math.cos(a)*d, py=y+Math.sin(a)*d*.78;
-    if (n===0) g.moveTo(px,py); else g.lineTo(px,py);
-  }
-  g.closePath();
-}
+/* ================= ISLAND WORLD MODULE =================
+   Generation and coast geometry live in island-world.js.
+   Tune size and spacing in island-settings.js. */
+const islandWorld = createIslandWorld({
+  getIslands: () => isl,
+  setIslands: next => { isl = next; },
+  islandRadius,
+  hash,
+  context: g
+});
+const ensureWorldAround = islandWorld.ensureWorldAround;
+const shapeIsland = islandWorld.shapeIsland;
 
 /* ================= DRAWING ================= */
 function circle(x, y, r, c) { g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
@@ -617,7 +587,7 @@ function saveLocal(showToast = true) {
   if (!me || !started) return;
   try {
     const snapshot = {
-      format: 'FIH-CONQUEST-LOCAL', version: 1, savedAt: new Date().toISOString(),
+      format: 'FIH-CONQUEST-LOCAL', version: 1, worldScale: SCALE, savedAt: new Date().toISOString(),
       userId: me.id, mode: gameMode,
       player: {x:P.x, y:P.y, a:P.a, boat:P.boat, coins:st.coins, xp:st.xp, level:st.level, name:st.name, inventory:inv},
       islands: isl.map(i => ({id:i.row.id, owner_id:i.row.owner_id}))
@@ -632,7 +602,11 @@ function restoreLocal() {
     const data = JSON.parse(raw);
     if (data.format !== 'FIH-CONQUEST-LOCAL' || data.version !== 1 || data.userId !== me.id || !data.player) return false;
     const p = data.player;
-    if (Number.isFinite(p.x) && Number.isFinite(p.y)) { P.x=p.x; P.y=p.y; }
+    if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
+      const oldScale = Number(data.worldScale) || 28;
+      const scaleFactor = SCALE / oldScale;
+      P.x = p.x * scaleFactor; P.y = p.y * scaleFactor;
+    }
     if (Number.isFinite(p.a)) P.a=p.a;
     P.boat=!!p.boat;
     return true;
