@@ -47,8 +47,8 @@ const creds = () => {
   if (!email || password.length < 6) { err('Enter an email and a password of 6+ characters.'); return null; }
   return {email, password};
 };
-$('bin').onclick = async () => { err(); const c = creds(); if (!c) return; const {error} = await sb.auth.signInWithPassword(c); if (error) err(error.message); };
-$('bup').onclick = async () => {
+if ($('bin')) $('bin').onclick = async () => { err(); const c = creds(); if (!c) return; const {error} = await sb.auth.signInWithPassword(c); if (error) err(error.message); };
+if ($('bup')) $('bup').onclick = async () => {
   err(); const c = creds(); if (!c) return;
   const username = $('un').value.trim();
   if (username.length < 2) return err('Pick a username (2-20 characters).');
@@ -56,7 +56,7 @@ $('bup').onclick = async () => {
   if (error) return err(error.message);
   if (!data.session) err('Check your email to confirm your account, then sign in.');
 };
-$('bout').onclick = () => sb.auth.signOut();
+if ($('bout')) $('bout').onclick = () => sb.auth.signOut();
 sb.auth.onAuthStateChange((e, s) => {
   me = s?.user || null;
   if (!me && started) { location.reload(); return; }
@@ -115,7 +115,7 @@ async function sell(f, q) {
   if (error) { toast(error.message); return 0; }
   st.coins = data.coins; inv[f] -= q; return data.earned;
 }
-$('panel').onclick = async e => {
+if ($('panel')) $('panel').onclick = async e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'cl') { tab = null; return render(); }
   if (b.id === 'lo') return sb.auth.signOut();
@@ -299,7 +299,7 @@ function restoreLocal() {
     return true;
   } catch (_) { return false; }
 }
-$('savegame').onclick = () => saveLocal(true);
+if ($('savegame')) $('savegame').onclick = () => saveLocal(true);
 addEventListener('beforeunload', () => saveLocal(false));
 
 /* ================= MAIN LOOP ================= */
@@ -345,8 +345,8 @@ addEventListener('keydown', e => {
   if (k === 'escape') { tab = null; render(); }
 });
 addEventListener('keyup', e => keys[e.key.toLowerCase()] = 0);
-$('chat').onkeydown = e => { if (e.key === 'Enter') { sendChat(); $('chat').blur(); } if (e.key === 'Escape') $('chat').blur(); };
-$('fish').onclick = cast; $('boat').onclick = boat;
+if ($('chat')) $('chat').onkeydown = e => { if (e.key === 'Enter') { sendChat(); $('chat').blur(); } if (e.key === 'Escape') $('chat').blur(); };
+if ($('fish')) $('fish').onclick = cast; if ($('boat')) $('boat').onclick = boat;
 
 async function startGame(mode) {
   gameMode = mode;
@@ -369,11 +369,11 @@ async function startGame(mode) {
   if (hadSave) toast('Previous position restored. Press Save Game to save anytime.');
   requestAnimationFrame(loop);
 }
-$('play').onclick = () => startGame('multiplayer');
-$('solo').onclick = () => startGame('singleplayer');
+if ($('play')) $('play').onclick = () => startGame('multiplayer');
+if ($('solo')) $('solo').onclick = () => startGame('singleplayer');
 
 // Export a portable backup of the player's progress and the island ownership snapshot.
-$('savefile').onclick = async () => {
+if ($('savefile')) $('savefile').onclick = async () => {
   try {
     const rows = await load();
     if (!rows.length) throw new Error('Could not load island data for this save.');
@@ -390,8 +390,8 @@ $('savefile').onclick = async () => {
     toast('Save file exported.');
   } catch (e) { err('Could not export save: ' + e.message); }
 };
-$('loadfile').onclick = () => $('saveinput').click();
-$('saveinput').onchange = async e => {
+if ($('loadfile')) $('loadfile').onclick = () => $('saveinput').click();
+if ($('saveinput')) $('saveinput').onchange = async e => {
   const file = e.target.files?.[0]; if (!file) return;
   try {
     const data = JSON.parse(await file.text());
