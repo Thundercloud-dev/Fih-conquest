@@ -464,6 +464,7 @@ function drawIslandSettlement(x, y, ownerId, hallLevel = 1, radius = LAND, level
     g.fillStyle='#e5c79b'; g.beginPath(); g.arc(fx,fy-3,2.6,0,Math.PI*2); g.fill();
     g.strokeStyle='#f0dfb2'; g.lineWidth=1; g.beginPath(); g.moveTo(fx+3,fy-4); g.lineTo(fx+9,fy-10); g.stroke();
   }
+  g.restore(); // restore the island-scale transform before drawing the rest of the world
 }
 
 function draw(t) {
