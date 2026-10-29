@@ -1,6 +1,7 @@
 import {createClient} from '@supabase/supabase-js';
 import { ISLAND_SETTINGS } from './island-settings.js';
 import { createIslandWorld, seededRandom } from './island-world.js';
+import { drawIslandTerrain, drawIslandTrees } from './island-renderer.js';
 
 /* ================= SETTINGS ================= */
 const SUPABASE_URL = 'https://ucxustzrevjlktcfsmfy.supabase.co';
@@ -500,16 +501,8 @@ function draw(t) {
     const x = i.wx - camx, y = i.wy - camy;
     const r = islandRadius(i); if (x < -r-100 || y < -r-100 || x > W + r+100 || y > Hh + r+100) continue;
     const radius = islandRadius(i);
-    shapeIsland(i,x,y,t); g.fillStyle = '#e8d27a'; g.fill();
-    g.save(); shapeIsland(i,x,y,t); g.clip();
-    g.fillStyle = BIO[i.row.biome] || '#4caf50'; g.fillRect(x-radius-2,y-radius-2,radius*2+4,radius*2+4);
-    // Terrain patches create visual variety across much larger islands.
-    const rng = seededRandom(i.seed || hash(i.row.id || i.key || i.row.name));
-    for (let patch=0;patch<14;patch++) {
-      const px=x+(rng()-.5)*radius*1.65, py=y+(rng()-.5)*radius*1.35, pr=8+rng()*radius*.12;
-      circle(px,py,pr, patch%3===0?'rgba(230,213,135,.20)':patch%3===1?'rgba(35,99,52,.22)':'rgba(255,255,255,.07)');
-    }
-    g.restore();
+    drawIslandTerrain({context:g,island:i,x,y,radius,biomeColor:BIO[i.row.biome] || '#4caf50',shapeIsland});
+    
     // Inner coastline highlights the shore against the ocean.
     g.save(); shapeIsland(i,x,y,t); g.strokeStyle='rgba(255,245,185,.8)'; g.lineWidth=5; g.stroke(); g.restore();
     const levels = i.generated ? {} : islandBuilds(i.row.id);
@@ -542,20 +535,8 @@ function draw(t) {
       g.fillStyle = '#9c6a3a'; g.fillRect(x+105,y+34,12+levels.dock*5,9);
       text('D'+levels.dock,x+116,y+54,9,'#fff');
     }
-    if (!i.palms.length) {
-      const rng = seededRandom(i.seed || hash(i.row.id || i.key || i.row.name));
-      const count = i.generated ? 18 + Math.floor(rng()*18) : 10;
-      for(let n=0;n<count;n++) {
-        const a=rng()*Math.PI*2, d=Math.sqrt(rng())*radius*.78;
-        i.palms.push([Math.cos(a)*d,Math.sin(a)*d*.76]);
-      }
-    }
-    for (const p of i.palms) {
-      const treeScale = i.generated ? .7 + (i.seed%5)*.08 : 1;
-      circle(x+p[0],y+p[1],(i.generated?11:15)*treeScale,'#26733b');
-      circle(x+p[0]-2,y+p[1]-2,(i.generated?7:9)*treeScale,'#3d9948');
-      circle(x+p[0],y+p[1],3*treeScale,'#8a5a2b');
-    }
+    // Tree clusters are now rendered by island-renderer.js as small palm silhouettes, not round dots.
+    drawIslandTrees({context:g,island:i,x,y,radius,seededRandom,hash});
     if (!i.generated && i.row.owner_id) {
       const ownerColor = i.row.owner_id === me.id ? '#d8c46a' : '#a95a50';
       drawWarship(x + radius*.58, y + radius*.40, 'destroyer', ownerColor, -0.35);
