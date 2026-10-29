@@ -41,5 +41,6 @@ input{width:100%;margin:5px 0;padding:10px;border-radius:8px;border:1px solid va
 </div>
 <div id="panel" class="card hide"></div><div id="toast"></div>
 <div id="feed"></div><input id="chat" class="hide" maxlength="80" placeholder="Press Enter to chat">
+  <script>addEventListener('error',e=>{var m=document.getElementById('err');if(m)m.textContent='Problem: '+(e.message||('could not load '+(e.target&&(e.target.src||e.target.href))))},true)</script>
 <script type="module" src="game.js"></script>
 </body></html>
