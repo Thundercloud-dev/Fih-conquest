@@ -18,6 +18,7 @@ const BUILDINGS = {
   mainhall: {name:'Main Hall', max:3, costs:[0,25,45], desc:'Upgrades the island settlement headquarters.'},
   cottage: {name:'Cottage', max:2, costs:[8,16], desc:'Adds homes for island residents.'},
   worker: {name:'Worker Station', max:3, costs:[12,24,40], desc:'Improves island work output.'},
+  fishinghub: {name:'Fishing Hub', max:3, costs:[15,30,50], desc:'Worker Station building: hires fishers and generates fish over time.'},
   farm: {name:'Farm Station', max:3, costs:[10,20,35], desc:'A worker station focused on food.'},
   lumber: {name:'Lumber Station', max:3, costs:[10,22,38], desc:'A worker station focused on timber.'},
   mine: {name:'Mine Station', max:3, costs:[14,28,45], desc:'A worker station focused on ore.'},
@@ -32,10 +33,18 @@ let me = null, st = {coins:0, xp:0, level:1, name:'Sailor'}, inv = {}, isl = [];
 let ch = null, started = false, gameMode = 'multiplayer', online = {}, remotes = {}, tab = null;
 let P = {x:0, y:0, a:0, boat:false, e:'', eUntil:0, say:'', sayUntil:0, n:'', c:''};
 let keys = {}, fs = null, busy = false, lastFish = 0, lastChat = 0, pops = [], camx = 0, camy = 0;
-let development = {materials:25, buildings:{}, discovered:[]};
+let development = {materials:25, buildings:{}, discovered:[], resources:{wood:0,fish:0,stone:0,food:0}, lastResourceAt:Date.now()};
 const devKey = () => 'fih-conquest-development-v1:' + me.id;
 function saveDevelopment() { if (!me) return; try { localStorage.setItem(devKey(), JSON.stringify(development)); } catch (_) {} }
-function loadDevelopment() { try { const d = JSON.parse(localStorage.getItem(devKey()) || 'null'); if (d && typeof d === 'object') development = {materials:Math.max(0, Number(d.materials)||0), buildings:d.buildings && typeof d.buildings==='object' ? d.buildings : {}, discovered:Array.isArray(d.discovered) ? d.discovered.filter(n => FISH_CATALOG.includes(n)) : []}; } catch (_) {} }
+function loadDevelopment() { try { const d = JSON.parse(localStorage.getItem(devKey()) || 'null'); if (d && typeof d === 'object') development = {materials:Math.max(0, Number(d.materials)||0), buildings:d.buildings && typeof d.buildings==='object' ? d.buildings : {}, discovered:Array.isArray(d.discovered) ? d.discovered.filter(n => FISH_CATALOG.includes(n)) : [], resources:{wood:Math.max(0,Number(d.resources?.wood)||0),fish:Math.max(0,Number(d.resources?.fish)||0),stone:Math.max(0,Number(d.resources?.stone)||0),food:Math.max(0,Number(d.resources?.food)||0)}, lastResourceAt:Number(d.lastResourceAt)||Date.now()}; } catch (_) {} }
+function updateResourceProduction() {
+  if (!me) return;
+  const now=Date.now(), elapsed=Math.min(24*60*60*1000,Math.max(0,now-(development.lastResourceAt||now)))/3600000;
+  const owned=isl.filter(i=>!i.generated && i.row.owner_id===me.id);
+  for(const island of owned){const b=islandBuilds(island.row.id);development.resources.fish+=(b.fishinghub||0)*6*elapsed;development.resources.wood+=(b.lumber||0)*5*elapsed;development.resources.stone+=(b.mine||0)*3*elapsed;development.resources.food+=(b.farm||0)*4*elapsed;}
+  development.lastResourceAt=now; saveDevelopment();
+}
+function resourceSummary() { const r=development.resources||{wood:0,fish:0,stone:0,food:0}; return `<div class="row"><span>🪙 <b>Gold</b></span><b>${Math.floor(st.coins||0)}</b></div><div class="row"><span>🪵 <b>Wood</b></span><b>${Math.floor(r.wood||0)}</b></div><div class="row"><span>🐟 <b>Fish</b></span><b>${Math.floor(r.fish||0)}</b></div><div class="row"><span>⛏️ <b>Stone</b></span><b>${Math.floor(r.stone||0)}</b></div><div class="row"><span>🌾 <b>Food</b></span><b>${Math.floor(r.food||0)}</b></div><div class="row"><span>🧱 <b>Building materials</b></span><b>${Math.floor(development.materials||0)}</b></div>`; }
 const islandBuilds = id => { const b = development.buildings[id] || (development.buildings[id] = {}); if (!Number.isFinite(b.mainhall)) b.mainhall = 1; return b; };
 function discoverFish() {
   const undiscovered = FISH_CATALOG.filter(n => !development.discovered.includes(n));
@@ -44,7 +53,7 @@ function discoverFish() {
   const wanted = roll > .97 ? 'Legendary' : roll > .78 ? 'Rare' : roll > .38 ? 'Uncommon' : 'Common';
   const pool = undiscovered.filter(n => FISH_RARITY[n] === wanted);
   const pick = (pool.length ? pool : undiscovered)[Math.floor(Math.random() * (pool.length ? pool : undiscovered).length)];
-  development.discovered.push(pick); development.materials += FISH_RARITY[pick] === 'Legendary' ? 5 : FISH_RARITY[pick] === 'Rare' ? 3 : 1;
+  development.discovered.push(pick); development.materials += FISH_RARITY[pick] === 'Legendary' ? 5 : FISH_RARITY[pick] === 'Rare' ? 3 : 1; development.resources.fish += 1;
   saveDevelopment(); feed('Aquarium discovery: ' + pick + ' (' + FISH_RARITY[pick] + ')!'); return pick;
 }
 
@@ -115,6 +124,7 @@ const hud = () => { $('stats').innerHTML = `<b>${st.name}</b> &nbsp; ${st.coins}
 
 /* ================= PANELS ================= */
 function render() {
+  updateResourceProduction();
   const p = $('panel');
   if (!tab) { p.classList.add('hide'); return; }
   p.classList.remove('hide'); let h = '';
@@ -137,7 +147,7 @@ function render() {
   if (tab === 'build') {
     const island = here();
     const owned = isl.filter(i => i.row.owner_id === me.id);
-    h = '<h3>Island Development</h3><p><b>Materials:</b> ' + development.materials + '</p><p><small>Materials are earned by fishing and discovering new species. Buildings are saved in this browser for your account.</small></p>';
+    h = '<h3>Island Development</h3><h4>Island Resources</h4>' + resourceSummary() + '<p><small>Fishers produce 6 fish/hour per Fishing Hub level. Lumber stations produce 5 wood/hour per level; mines 3 stone/hour; farms 4 food/hour. Production is credited when you return, up to 24 hours. These new resource stores are saved in this browser for your account; Gold is your existing server-side coin balance.</small></p>';
     if (!owned.length) h += '<p>Claim an island before building on it.</p>';
     else {
       if (!island || island.row.owner_id !== me.id) h += '<p><small>Travel onto one of your islands to construct or upgrade buildings.</small></p>';
@@ -149,8 +159,10 @@ function render() {
       if (island && island.row.owner_id === me.id) {
         const levels = islandBuilds(island.row.id);
         h += '<h3>Construct on ' + island.row.name + '</h3>' + Object.entries(BUILDINGS).map(([key,b]) => {
-          const level = levels[key] || 0, cost = b.costs[level];
-          return '<div class="row"><span><b>' + b.name + '</b><br><small>Lv ' + level + '/' + b.max + ' · ' + b.desc + '</small></span><button data-build="' + key + '" ' + (level >= b.max || development.materials < cost ? 'disabled' : '') + '>' + (level >= b.max ? 'MAX' : (level ? 'Upgrade ' : 'Build ') + cost + ' mat.') + '</button></div>';
+          const level = levels[key] || 0, cost = b.costs[level], needsWorker = key === 'fishinghub' && !(levels.worker || 0), locked = needsWorker;
+          const title = key === 'fishinghub' ? '🎣 ' + b.name + ' <small>· Worker Station</small>' : b.name;
+          const detail = key === 'fishinghub' ? b.desc + ' Fishers: ' + level*3 + ' · Output: ' + level*6 + ' fish/hour. Requires Worker Station Lv 1.' : b.desc;
+          return '<div class="row"><span><b>' + title + '</b><br><small>Lv ' + level + '/' + b.max + ' · ' + detail + '</small></span><button data-build="' + key + '" ' + (level >= b.max || development.materials < cost || locked ? 'disabled' : '') + '>' + (level >= b.max ? 'MAX' : locked ? 'Requires Worker Station' : (level ? 'Upgrade ' : 'Build ') + cost + ' mat.') + '</button></div>';
         }).join('');
       }
     }
@@ -194,6 +206,7 @@ if ($('panel')) $('panel').onclick = async e => {
     if (!island || island.row.owner_id !== me.id) return toast('Stand on an island you own to build.');
     const key = b.dataset.build, spec = BUILDINGS[key], levels = islandBuilds(island.row.id), level = levels[key] || 0, cost = spec?.costs[level];
     if (!spec || level >= spec.max || development.materials < cost) return toast('Not enough materials or building is max level.');
+    if (key === 'fishinghub' && !(levels.worker || 0)) return toast('Build a Worker Station first.');
     development.materials -= cost; levels[key] = level + 1; saveDevelopment();
     feed(spec.name + ' upgraded to level ' + (level + 1) + ' on ' + island.row.name + '.'); toast(spec.name + ' upgraded to Lv ' + (level + 1));
   }
@@ -409,7 +422,7 @@ function drawFishingRod(x, y, angle, casting, now) {
   }
 }
 // Small settlement and harbor details make claimed islands read like territories.
-function drawIslandSettlement(x, y, ownerId, hallLevel = 1, radius = LAND) {
+function drawIslandSettlement(x, y, ownerId, hallLevel = 1, radius = LAND, levels = {}) {
   const owned = !!ownerId;
   const flag = flagCol(ownerId);
   // A low-contrast territorial boundary follows the island's interior coast.
@@ -443,6 +456,14 @@ function drawIslandSettlement(x, y, ownerId, hallLevel = 1, radius = LAND) {
   for (let px = 2; px < 37; px += 8) { g.beginPath(); g.moveTo(px, -7); g.lineTo(px, 6); g.stroke(); }
   g.fillStyle = '#4a3927'; g.fillRect(34, -12, 5, 23);
   g.restore();
+  // Fishing Hub: tiny fishing boats and fisher silhouettes around the harbor.
+  const fisherCount = Math.min(9, Math.max(0, (levels.fishinghub || 0) * 3));
+  for (let n=0; n<fisherCount; n++) {
+    const fx=x+65+(n%3)*17, fy=y+48+Math.floor(n/3)*15;
+    g.fillStyle='#69472c'; g.beginPath(); g.moveTo(fx-7,fy); g.lineTo(fx+7,fy); g.lineTo(fx+4,fy+5); g.lineTo(fx-4,fy+5); g.closePath(); g.fill();
+    g.fillStyle='#e5c79b'; g.beginPath(); g.arc(fx,fy-3,2.6,0,Math.PI*2); g.fill();
+    g.strokeStyle='#f0dfb2'; g.lineWidth=1; g.beginPath(); g.moveTo(fx+3,fy-4); g.lineTo(fx+9,fy-10); g.stroke();
+  }
 }
 
 function draw(t) {
@@ -470,7 +491,7 @@ function draw(t) {
     // Inner coastline highlights the shore against the ocean.
     g.save(); shapeIsland(i,x,y,t); g.strokeStyle='rgba(255,245,185,.8)'; g.lineWidth=5; g.stroke(); g.restore();
     const levels = i.generated ? {} : islandBuilds(i.row.id);
-    if (!i.generated) drawIslandSettlement(x, y, i.row.owner_id, levels.mainhall || 1, radius);
+    if (!i.generated) drawIslandSettlement(x, y, i.row.owner_id, levels.mainhall || 1, radius, levels);
     if (!i.generated) text('H' + (levels.mainhall || 1), x - 12, y + 43, 9, '#fff4bf');
     if (!i.generated && (levels.worker || levels.farm || levels.lumber || levels.mine)) {
       const stations = [['worker',-48,48,'#d6c08b'],['farm',-72,20,'#7fbf68'],['lumber',-63,69,'#a96d35'],['mine',-40,87,'#8e9698']];
