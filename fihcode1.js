@@ -3,7 +3,7 @@ import {createClient} from '@supabase/supabase-js';
 /* ================= SETTINGS ================= */
 const SUPABASE_URL = 'https://ucxustzrevjlktcfsmfy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_DlflO5eJAotVhCv-q16Ceg_-fWZQ8Kr';
-const SCALE = 36, LAND = 105, SHORE = 122;        // map units -> pixels, island sizes
+const SCALE = 22, LAND = 105, SHORE = 122;        // map units -> pixels, island sizes
 const PRICE = {Sardine:4, Mackerel:7, Clownfish:10, Tuna:18, 'Golden Koi':35}; // display only, the database sets real prices
 const FCOL = {Sardine:'#9fb7c9', Mackerel:'#5fa8d3', Clownfish:'#ff8c42', Tuna:'#e74c3c', 'Golden Koi':'#ffd700'};
 const RARE = ['Tuna', 'Golden Koi'];
@@ -14,7 +14,7 @@ const $ = id => document.getElementById(id), cv = $('c'), g = cv.getContext('2d'
 
 /* ================= STATE ================= */
 let me = null, st = {coins:0, xp:0, level:1, name:'Sailor'}, inv = {}, isl = [];
-let ch = null, started = false, online = {}, remotes = {}, tab = null;
+let ch = null, started = false, gameMode = 'multiplayer', online = {}, remotes = {}, tab = null;
 let P = {x:0, y:0, a:0, boat:false, e:'', eUntil:0, say:'', sayUntil:0, n:'', c:''};
 let keys = {}, fs = null, busy = false, lastFish = 0, lastChat = 0, pops = [], camx = 0, camy = 0;
 
@@ -288,16 +288,55 @@ addEventListener('keyup', e => keys[e.key.toLowerCase()] = 0);
 $('chat').onkeydown = e => { if (e.key === 'Enter') { sendChat(); $('chat').blur(); } if (e.key === 'Escape') $('chat').blur(); };
 $('fish').onclick = cast; $('boat').onclick = boat;
 
-$('play').onclick = async () => {
-  $('play').disabled = true; err();
+async function startGame(mode) {
+  gameMode = mode;
+  $('play').disabled = true; $('solo').disabled = true; err();
   let rows;
-  try { rows = await load(); } catch (e) { err('Could not load game data: ' + e.message); $('play').disabled = false; return; }
-  if (!rows.length) { err('No islands found. Check your Supabase tables and policies.'); $('play').disabled = false; return; }
+  try { rows = await load(); }
+  catch (e) { err('Could not load game data: ' + e.message); $('play').disabled = false; $('solo').disabled = false; return; }
+  if (!rows.length) { err('No islands found. Check your Supabase tables and policies.'); $('play').disabled = false; $('solo').disabled = false; return; }
   isl = rows.map(row => ({row, wx: (row.x - 50) * SCALE, wy: (row.y - 50) * SCALE,
     palms: [0, 1, 2, 3, 4, 5, 6].map(k => { const a = k * 2.4 + row.x, d = 25 + (k * 37 % 45); return [Math.cos(a) * d, Math.sin(a) * d]; })}));
   const s = isl.find(i => i.row.id === 'starter-cove') || isl[0];
   P.x = s.wx; P.y = s.wy + 45; P.n = st.name; P.c = hue(me.id);
   started = true;
-  $('menu').classList.add('hide'); $('hud').classList.remove('hide'); $('chat').classList.remove('hide');
-  hud(); join(); requestAnimationFrame(loop);
+  $('menu').classList.add('hide'); $('hud').classList.remove('hide');
+  $('chat').classList.toggle('hide', gameMode !== 'multiplayer');
+  hud();
+  if (gameMode === 'multiplayer') join();
+  else { online = {}; remotes = {}; toast('Singleplayer mode: other players are hidden.'); }
+  requestAnimationFrame(loop);
+}
+$('play').onclick = () => startGame('multiplayer');
+$('solo').onclick = () => startGame('singleplayer');
+
+// Export a portable backup of the player's progress and the island ownership snapshot.
+$('savefile').onclick = () => {
+  try {
+    const payload = {
+      format: 'FIH-CONQUEST-SAVE', version: 1, exportedAt: new Date().toISOString(),
+      userId: me.id,
+      player: {name: st.name, coins: st.coins, xp: st.xp, level: st.level, inventory: inv},
+      islands: isl.map(i => ({id: i.row.id, name: i.row.name, biome: i.row.biome, x: i.row.x, y: i.row.y, claim_cost: i.row.claim_cost, owner_id: i.row.owner_id}))
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'fih-conquest-save.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Save file exported.');
+  } catch (e) { err('Could not export save: ' + e.message); }
+};
+$('loadfile').onclick = () => $('saveinput').click();
+$('saveinput').onchange = async e => {
+  const file = e.target.files?.[0]; if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.format !== 'FIH-CONQUEST-SAVE' || data.version !== 1 || data.userId !== me.id || !data.player || !Array.isArray(data.islands))
+      throw new Error('Invalid save file or it belongs to another account.');
+    const cloudRows = await load();
+    if (!cloudRows.length) throw new Error('Could not verify your online island data.');
+    toast('Backup verified. Your online account remains the source of truth.');
+    feed('Save file checked: ' + data.islands.length + ' islands in the backup.');
+  } catch (ex) { err('Could not import save file: ' + ex.message); }
+  e.target.value = '';
 };
