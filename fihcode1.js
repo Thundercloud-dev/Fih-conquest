@@ -127,9 +127,9 @@ function render() {
     }).join('') + `<p><button data-all="1" ${total ? '' : 'disabled'}>Sell every fish</button></p>`;
   }
   if (tab === 'map') {
-    h = '<h3>Island conquest</h3><small>Stand on an island to claim it.</small>' + isl.map(i => {
+    h = '<h3>Island conquest</h3><small>Stand on a settled island to claim it. Explore generated islands beyond the known world.</small>' + isl.map(i => {
       const o = i.row.owner_id, cost = i.row.claim_cost;
-      const act = o ? '' : (here() === i ? `<button data-c="${i.row.id}" ${st.coins < cost ? 'disabled' : ''}>Claim</button>` : '<small>Sail there</small>');
+      const act = i.generated ? '<small>Uncharted · explore</small>' : (o ? '' : (here() === i ? `<button data-c="${i.row.id}" ${st.coins < cost ? 'disabled' : ''}>Claim</button>` : '<small>Sail there</small>'));
       return `<div class="row"><span><b>${i.row.name}</b> <small>${i.row.biome}, ${cost ? cost + ' coins' : 'free'}</small><br><small>${o ? 'Owner: ' + nm(o) : 'Unclaimed'}</small></span>${act}</div>`;
     }).join('');
   }
@@ -296,7 +296,7 @@ function ensureWorldAround(x, y) {
     const gx=cx+dx, gy=cy+dy;
     if (Math.abs(gx*CHUNK_SIZE) > WORLD_LIMIT_X || Math.abs(gy*CHUNK_SIZE) > WORLD_LIMIT_Y) continue;
     const key = 'gen:' + gx + ':' + gy;
-    if (isl.some(i => i.key === key)) continue;
+    if (isl.some(i => i.worldKey === key)) continue;
     const rand = seededRandom(chunkSeed(gx,gy));
     for (let n=0; n<GENERATED_ISLANDS_PER_CHUNK; n++) {
       const wx = gx*CHUNK_SIZE + (rand()-.5)*CHUNK_SIZE*.8;
@@ -305,7 +305,7 @@ function ensureWorldAround(x, y) {
       const biome = GENERATED_BIOMES[Math.floor(rand()*GENERATED_BIOMES.length)];
       const size = .75 + rand()*.9;
       const seed = Math.floor(rand()*1e9);
-      isl.push({key,row:{id:key,name:['Driftwood Isle','Northwind Reach','Silver Shoal','Whisper Cay','Stormglass Key','Tidewatch','Seafarer’s Rest','Bluehaven'][Math.floor(rand()*8)],biome,x:wx,y:wy,claim_cost:0,owner_id:null,generated:true},wx,wy,generated:true,size,seed,palms:[],worldKey:key});
+      isl.push({key:key+':'+n,worldKey:key,row:{id:key+':'+n,name:['Driftwood Isle','Northwind Reach','Silver Shoal','Whisper Cay','Stormglass Key','Tidewatch','Seafarer’s Rest','Bluehaven'][Math.floor(rand()*8)],biome,x:wx,y:wy,claim_cost:0,owner_id:null,generated:true},wx,wy,generated:true,size,seed,palms:[],worldKey:key});
     }
   }
 }
@@ -440,7 +440,6 @@ function drawIslandSettlement(x, y, ownerId, hallLevel = 1, radius = LAND) {
   for (let px = 2; px < 37; px += 8) { g.beginPath(); g.moveTo(px, -7); g.lineTo(px, 6); g.stroke(); }
   g.fillStyle = '#4a3927'; g.fillRect(34, -12, 5, 23);
   g.restore();
-  g.restore();
 }
 
 function draw(t) {
@@ -468,9 +467,9 @@ function draw(t) {
     // Inner coastline highlights the shore against the ocean.
     g.save(); shapeIsland(i,x,y,t); g.strokeStyle='rgba(255,245,185,.8)'; g.lineWidth=5; g.stroke(); g.restore();
     const levels = islandBuilds(i.row.id);
-    drawIslandSettlement(x, y, i.row.owner_id, levels.mainhall || 1, radius);
-    text('H' + (levels.mainhall || 1), x - 12, y + 43, 9, '#fff4bf');
-    if (levels.worker || levels.farm || levels.lumber || levels.mine) {
+    if (!i.generated) drawIslandSettlement(x, y, i.row.owner_id, levels.mainhall || 1, radius);
+    if (!i.generated) text('H' + (levels.mainhall || 1), x - 12, y + 43, 9, '#fff4bf');
+    if (!i.generated && (levels.worker || levels.farm || levels.lumber || levels.mine)) {
       const stations = [['worker',-48,48,'#d6c08b'],['farm',-72,20,'#7fbf68'],['lumber',-63,69,'#a96d35'],['mine',-40,87,'#8e9698']];
       for (const [key,bx,by,col] of stations) if (levels[key]) {
         g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(x+bx-2,y+by+3,21,15);
@@ -479,21 +478,21 @@ function draw(t) {
         text('Lv'+levels[key],x+bx+8,y+by+23,8,'#fff6ce');
       }
     }
-    if (levels.cottage) {
+    if (!i.generated && levels.cottage) {
       for (let n=0;n<levels.cottage;n++) {
         const bx = 34 + n*19, by = -16 + n*10;
         g.fillStyle = '#d8c3a0'; g.fillRect(x+bx,y+by,13,10);
         g.fillStyle = '#6b4530'; g.beginPath(); g.moveTo(x+bx-2,y+by+2); g.lineTo(x+bx+6,y+by-4); g.lineTo(x+bx+15,y+by+2); g.closePath(); g.fill();
       }
     }
-    if (levels.aquarium) {
+    if (!i.generated && levels.aquarium) {
       g.fillStyle = '#74d5e8'; g.fillRect(x+47,y+37,25,17);
       g.strokeStyle = '#e0f5f5'; g.lineWidth = 2; g.strokeRect(x+47,y+37,25,17);
       g.fillStyle = '#1e6b8a'; g.fillRect(x+50,y+40,19,11);
       g.fillStyle = '#ffcf5b'; g.beginPath(); g.ellipse(x+57,y+45,4,2,0,0,Math.PI*2); g.fill();
       text('A'+levels.aquarium,x+59,y+64,9,'#fff');
     }
-    if (levels.dock) {
+    if (!i.generated && levels.dock) {
       g.fillStyle = '#9c6a3a'; g.fillRect(x+105,y+34,12+levels.dock*5,9);
       text('D'+levels.dock,x+116,y+54,9,'#fff');
     }
@@ -511,7 +510,7 @@ function draw(t) {
       circle(x+p[0]-2,y+p[1]-2,(i.generated?7:9)*treeScale,'#3d9948');
       circle(x+p[0],y+p[1],3*treeScale,'#8a5a2b');
     }
-    if (i.row.owner_id) {
+    if (!i.generated && i.row.owner_id) {
       const ownerColor = i.row.owner_id === me.id ? '#d8c46a' : '#a95a50';
       drawWarship(x + radius*.58, y + radius*.40, 'destroyer', ownerColor, -0.35);
       const ownedCount = isl.filter(q => q.row.owner_id === i.row.owner_id).length;
