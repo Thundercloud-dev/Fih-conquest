@@ -9,7 +9,7 @@ export const ISLAND_SETTINGS = Object.freeze({
   generatedIslandsPerChunk: 2,
   generatedBiomes: ['tropical', 'reef', 'mist', 'beach', 'rocky', 'remote'],
   chunkSearchRadius: 2,
-  islandSafetyGap: 550,
+  islandSafetyGap: 200,
   minGeneratedSize: 0.9,
   generatedSizeRange: 0.6
 });
