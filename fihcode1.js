@@ -34,9 +34,51 @@ let ch = null, started = false, gameMode = 'multiplayer', online = {}, remotes =
 let P = {x:0, y:0, a:0, boat:false, e:'', eUntil:0, say:'', sayUntil:0, n:'', c:''};
 let keys = {}, fs = null, busy = false, lastFish = 0, lastChat = 0, pops = [], camx = 0, camy = 0;
 let development = {materials:25, buildings:{}, discovered:[], resources:{wood:0,fish:0,stone:0,food:0}, lastResourceAt:Date.now()};
+let developmentSyncReady = false, developmentSaveTimer = null, developmentLoading = false;
 const devKey = () => 'fih-conquest-development-v1:' + me.id;
-function saveDevelopment() { if (!me) return; try { localStorage.setItem(devKey(), JSON.stringify(development)); } catch (_) {} }
-function loadDevelopment() { try { const d = JSON.parse(localStorage.getItem(devKey()) || 'null'); if (d && typeof d === 'object') development = {materials:Math.max(0, Number(d.materials)||0), buildings:d.buildings && typeof d.buildings==='object' ? d.buildings : {}, discovered:Array.isArray(d.discovered) ? d.discovered.filter(n => FISH_CATALOG.includes(n)) : [], resources:{wood:Math.max(0,Number(d.resources?.wood)||0),fish:Math.max(0,Number(d.resources?.fish)||0),stone:Math.max(0,Number(d.resources?.stone)||0),food:Math.max(0,Number(d.resources?.food)||0)}, lastResourceAt:Number(d.lastResourceAt)||Date.now()}; } catch (_) {} }
+function normalizeDevelopment(d) {
+  return {materials:Math.max(0,Number(d?.materials)||0),buildings:d?.buildings&&typeof d.buildings==='object'?d.buildings:{},discovered:Array.isArray(d?.discovered)?d.discovered.filter(n=>FISH_CATALOG.includes(n)):[],resources:{wood:Math.max(0,Number(d?.resources?.wood)||0),fish:Math.max(0,Number(d?.resources?.fish)||0),stone:Math.max(0,Number(d?.resources?.stone)||0),food:Math.max(0,Number(d?.resources?.food)||0)},lastResourceAt:Number(d?.lastResourceAt)||Date.now()};
+}
+function saveDevelopment() {
+  if (!me) return;
+  try { localStorage.setItem(devKey(), JSON.stringify(development)); } catch (_) {}
+  if (!developmentSyncReady || developmentLoading) return;
+  clearTimeout(developmentSaveTimer);
+  developmentSaveTimer = setTimeout(async () => {
+    const snapshot = normalizeDevelopment(development);
+    const {error} = await sb.from('fih_development').upsert({user_id:me.id,materials:snapshot.materials,buildings:snapshot.buildings,discovered:snapshot.discovered,resources:snapshot.resources,last_resource_at:new Date(snapshot.lastResourceAt).toISOString(),updated_at:new Date().toISOString()},{onConflict:'user_id'});
+    if (error) console.warn('Cloud development sync failed. Run SUPABASE_SYNC.sql in your Supabase SQL Editor.', error.message);
+  }, 500);
+}
+async function loadDevelopment() {
+  developmentLoading = true; developmentSyncReady = false;
+  let local = null;
+  try { local = normalizeDevelopment(JSON.parse(localStorage.getItem(devKey()) || 'null')); } catch (_) { local = normalizeDevelopment(null); }
+  development = local;
+  try {
+    const {data,error} = await sb.from('fih_development').select('materials,buildings,discovered,resources,last_resource_at').eq('user_id',me.id).maybeSingle();
+    if (error) throw error;
+    if (data) {
+      development = normalizeDevelopment({materials:data.materials,buildings:data.buildings,discovered:data.discovered,resources:data.resources,lastResourceAt:data.last_resource_at ? Date.parse(data.last_resource_at) : Date.now()});
+      try { localStorage.setItem(devKey(),JSON.stringify(development)); } catch (_) {}
+    } else {
+      // First sign-in on this device: migrate its existing local progress to the cloud.
+      const {error:insertError} = await sb.from('fih_development').insert({user_id:me.id,materials:local.materials,buildings:local.buildings,discovered:local.discovered,resources:local.resources,last_resource_at:new Date(local.lastResourceAt).toISOString()});
+      if (insertError && insertError.code !== '23505') throw insertError;
+      if (insertError?.code === '23505') {
+        const retry = await sb.from('fih_development').select('materials,buildings,discovered,resources,last_resource_at').eq('user_id',me.id).single();
+        if (retry.error) throw retry.error;
+        development = normalizeDevelopment({materials:retry.data.materials,buildings:retry.data.buildings,discovered:retry.data.discovered,resources:retry.data.resources,lastResourceAt:retry.data.last_resource_at ? Date.parse(retry.data.last_resource_at) : Date.now()});
+      }
+    }
+    developmentSyncReady = true;
+    try { localStorage.setItem(devKey(),JSON.stringify(development)); } catch (_) {}
+  } catch (error) {
+    console.warn('Cloud development sync is not ready:',error.message);
+    developmentSyncReady = false;
+    toast('Cloud resource sync needs the Supabase setup SQL. Local progress still works on this device.');
+  } finally { developmentLoading = false; }
+}
 function updateResourceProduction() {
   if (!me) return;
   const now=Date.now(), elapsed=Math.min(24*60*60*1000,Math.max(0,now-(development.lastResourceAt||now)))/3600000;
@@ -647,7 +689,7 @@ async function startGame(mode) {
   ensureWorldAround(0,0);
   const s = isl.find(i => i.row.id === 'starter-cove') || isl[0];
   P.x = s.wx; P.y = s.wy + 45; P.n = st.name; P.c = hue(me.id);
-  loadDevelopment();
+  await loadDevelopment();
   const hadSave = restoreLocal();
   started = true;
   $('menu').classList.add('hide'); $('hud').classList.remove('hide');
