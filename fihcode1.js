@@ -469,7 +469,7 @@ function draw(t) {
     g.restore();
     // Inner coastline highlights the shore against the ocean.
     g.save(); shapeIsland(i,x,y,t); g.strokeStyle='rgba(255,245,185,.8)'; g.lineWidth=5; g.stroke(); g.restore();
-    const levels = islandBuilds(i.row.id);
+    const levels = i.generated ? {} : islandBuilds(i.row.id);
     if (!i.generated) drawIslandSettlement(x, y, i.row.owner_id, levels.mainhall || 1, radius);
     if (!i.generated) text('H' + (levels.mainhall || 1), x - 12, y + 43, 9, '#fff4bf');
     if (!i.generated && (levels.worker || levels.farm || levels.lumber || levels.mine)) {
