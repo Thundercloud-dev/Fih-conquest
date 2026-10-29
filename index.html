@@ -10,7 +10,8 @@ button{background:var(--acc);color:#2a1d00;border:0;border-radius:8px;padding:8p
 button.alt{background:var(--line);color:var(--ink)}button:disabled{opacity:.45;cursor:default}
 input{width:100%;margin:5px 0;padding:10px;border-radius:8px;border:1px solid var(--line);background:#06232f;color:var(--ink)}
 #menu{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(#0a2f44,#1b7a99 70%,#e8d27a)}
-#menu .card{width:min(420px,94vw);text-align:center;max-height:92vh;overflow:auto}h1{margin:0 0 4px;color:var(--acc)}\n.menu-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.menu-actions button{min-height:42px}.menu-note{font-size:12px;color:#c4e4f3;line-height:1.4}
+#menu .card{width:min(420px,94vw);text-align:center;max-height:92vh;overflow:auto}h1{margin:0 0 4px;color:var(--acc)}
+.menu-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.menu-actions button{min-height:42px}.menu-note{font-size:12px;color:#c4e4f3;line-height:1.4}
 #err{color:#ff9a9a;min-height:1.2em;font-size:14px}
 #hud{position:fixed;top:10px;left:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;pointer-events:none}
 #hud>*{pointer-events:auto}#stats{padding:8px 14px}progress{width:70px;vertical-align:middle}
@@ -37,7 +38,7 @@ input{width:100%;margin:5px 0;padding:10px;border-radius:8px;border:1px solid va
 <div id="hud" class="hide"><div class="card" id="stats"></div>
   <button data-t="inv">Inventory &amp; Shop</button><button data-t="map">Conquest</button>
   <button data-t="ppl">Players</button><button data-t="set" class="alt">Settings</button>
-  <button id="fish">Fish (F)</button><button id="boat" class="alt">Boat (B)</button>
+  <button id="fish">Fish (F)</button><button id="boat" class="alt">Boat (B)</button><button id="savegame">Save Game</button>
 </div>
 <div id="panel" class="card hide"></div><div id="toast"></div>
 <div id="feed"></div><input id="chat" class="hide" maxlength="80" placeholder="Press Enter to chat">
