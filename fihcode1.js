@@ -211,10 +211,11 @@ function render() {
     }
   }
   if (tab === 'aquarium') {
-    const owned = isl.filter(i => i.row.owner_id === me.id);
+    const owned = isl.filter(i => !i.generated && i.row.owner_id === me.id);
     const aqLevel = owned.reduce((n,i) => n + (islandBuilds(i.row.id).aquarium || 0), 0);
+    const seaZones = owned.length;
     const discovered = new Set(development.discovered);
-    h = '<h3>Aquarium Collection</h3><p><b>Discovered:</b> ' + discovered.size + ' / ' + FISH_CATALOG.length + ' species</p><p><small>Catch fish to discover new species. Rare and legendary discoveries give extra building materials.</small></p><div class="row"><span>Common</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Common' && discovered.has(n)).length + ' / 20</b></div><div class="row"><span>Uncommon</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Uncommon' && discovered.has(n)).length + ' / 30</b></div><div class="row"><span>Rare</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Rare' && discovered.has(n)).length + ' / 30</b></div><div class="row"><span>Legendary</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Legendary' && discovered.has(n)).length + ' / 20</b></div><p><small>Aquarium levels built on your islands: ' + aqLevel + '</small></p>';
+    h = '<h3>Aquarium Collection</h3><div class="row"><span><b>Your dominance</b></span><b>' + owned.length + ' island' + (owned.length === 1 ? '' : 's') + '</b></div><div class="row"><span>Controlled sea zones</span><b>' + seaZones + '</b></div><p><b>Discovered:</b> ' + discovered.size + ' / ' + FISH_CATALOG.length + ' species</p><p><small>Dominance updates when island ownership changes. Each island you control also marks a surrounding sea zone. Catch fish to discover new species. Rare and legendary discoveries give extra building materials.</small></p><div class="row"><span>Common</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Common' && discovered.has(n)).length + ' / 20</b></div><div class="row"><span>Uncommon</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Uncommon' && discovered.has(n)).length + ' / 30</b></div><div class="row"><span>Rare</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Rare' && discovered.has(n)).length + ' / 30</b></div><div class="row"><span>Legendary</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Legendary' && discovered.has(n)).length + ' / 20</b></div><p><small>Aquarium levels built on your islands: ' + aqLevel + '</small></p>';
     const aqPageSize = 20, aqPages = Math.ceil(FISH_CATALOG.length / aqPageSize);
     aquariumPage = Math.max(0, Math.min(aquariumPage, aqPages - 1));
     const aqStart = aquariumPage * aqPageSize;
@@ -501,6 +502,16 @@ function draw(t) {
     const x = i.wx - camx, y = i.wy - camy;
     const r = islandRadius(i); if (x < -r-100 || y < -r-100 || x > W + r+100 || y > Hh + r+100) continue;
     const radius = islandRadius(i);
+    // Claimed islands project control into the surrounding sea as a visible maritime zone.
+    if (!i.generated && i.row.owner_id) {
+      const zoneColor = i.row.owner_id === me.id ? '0,229,255' : '255,193,7';
+      g.save();
+      g.beginPath(); g.arc(x, y, radius + 200, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(' + zoneColor + ',0.09)'; g.fill();
+      g.setLineDash([10, 8]); g.lineWidth = 2;
+      g.strokeStyle = 'rgba(' + zoneColor + ',0.55)'; g.stroke();
+      g.restore();
+    }
     drawIslandTerrain({context:g,island:i,x,y,radius,biomeColor:BIO[i.row.biome] || '#4caf50',shapeIsland});
     
     // Inner coastline highlights the shore against the ocean.
