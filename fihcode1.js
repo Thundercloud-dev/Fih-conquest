@@ -3,7 +3,10 @@ import {createClient} from '@supabase/supabase-js';
 /* ================= SETTINGS ================= */
 const SUPABASE_URL = 'https://ucxustzrevjlktcfsmfy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_DlflO5eJAotVhCv-q16Ceg_-fWZQ8Kr';
-const SCALE = 28, LAND = 155, SHORE = 178;        // map units -> pixels, island sizes
+const SCALE = 28, LAND = 390, SHORE = 435; // larger landmasses; distances remain in world units
+const WORLD_LIMIT_X = 9000, WORLD_LIMIT_Y = 6500;
+const CHUNK_SIZE = 1900, GENERATED_ISLANDS_PER_CHUNK = 4;
+const GENERATED_BIOMES = ['tropical','reef','mist','beach','rocky','remote'];
 const PRICE = {Sardine:4, Mackerel:7, Clownfish:10, Tuna:18, 'Golden Koi':35}; // display only, the database sets real prices
 const FCOL = {Sardine:'#9fb7c9', Mackerel:'#5fa8d3', Clownfish:'#ff8c42', Tuna:'#e74c3c', 'Golden Koi':'#ffd700'};
 const RARE = ['Tuna', 'Golden Koi'];
@@ -57,8 +60,10 @@ function feed(msg) {
   while ($('feed').children.length > 7) $('feed').firstChild.remove();
   setTimeout(() => d.remove(), 15000);
 }
-const landAt = (x, y) => isl.some(i => Math.hypot(x - i.wx, y - i.wy) < LAND);
-const here = () => isl.find(i => Math.hypot(P.x - i.wx, P.y - i.wy) < LAND);
+const islandRadius = i => LAND * (i.generated ? i.size : 1);
+const landAt = (x, y) => isl.some(i => Math.hypot(x - i.wx, y - i.wy) < islandRadius(i));
+const islandAt = (x, y) => isl.find(i => Math.hypot(x-i.wx,y-i.wy) < islandRadius(i));
+const here = () => islandAt(P.x, P.y);
 // look around the player for land (want=true) or water (want=false)
 const probe = (want, r) => {
   for (let d = 20; d <= r; d += 20)
@@ -274,6 +279,47 @@ function join() {
     });
 }
 
+
+/* ================= PROCEDURAL WORLD =================
+   Seeded chunks are generated locally around the player. Existing Supabase islands
+   remain the shared/claimable starter locations; generated islands are personal
+   exploration landforms until a server-side world table is added. */
+function seededRandom(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function chunkSeed(cx, cy) { return (Math.imul(cx + 12000, 73856093) ^ Math.imul(cy + 12000, 19349663) ^ 0x51F1C0DE) >>> 0; }
+function ensureWorldAround(x, y) {
+  const cx = Math.floor(x / CHUNK_SIZE), cy = Math.floor(y / CHUNK_SIZE);
+  const radius = 2;
+  for (let dx=-radius; dx<=radius; dx++) for (let dy=-radius; dy<=radius; dy++) {
+    const gx=cx+dx, gy=cy+dy;
+    if (Math.abs(gx*CHUNK_SIZE) > WORLD_LIMIT_X || Math.abs(gy*CHUNK_SIZE) > WORLD_LIMIT_Y) continue;
+    const key = 'gen:' + gx + ':' + gy;
+    if (isl.some(i => i.key === key)) continue;
+    const rand = seededRandom(chunkSeed(gx,gy));
+    for (let n=0; n<GENERATED_ISLANDS_PER_CHUNK; n++) {
+      const wx = gx*CHUNK_SIZE + (rand()-.5)*CHUNK_SIZE*.8;
+      const wy = gy*CHUNK_SIZE + (rand()-.5)*CHUNK_SIZE*.8;
+      if (isl.some(i => Math.hypot(i.wx-wx,i.wy-wy) < 900)) continue;
+      const biome = GENERATED_BIOMES[Math.floor(rand()*GENERATED_BIOMES.length)];
+      const size = .75 + rand()*.9;
+      const seed = Math.floor(rand()*1e9);
+      isl.push({key,row:{id:key,name:['Driftwood Isle','Northwind Reach','Silver Shoal','Whisper Cay','Stormglass Key','Tidewatch','Seafarer’s Rest','Bluehaven'][Math.floor(rand()*8)],biome,x:wx,y:wy,claim_cost:0,owner_id:null,generated:true},wx,wy,generated:true,size,seed,palms:[],worldKey:key});
+    }
+  }
+}
+function shapeIsland(i, x, y, now) {
+  const r = islandRadius(i), seed = i.seed || hash(i.row.id || i.key || i.row.name);
+  const points = 18, noise = (a) => 1 + .085*Math.sin(a*3+seed*.001) + .055*Math.cos(a*5+seed*.0007) + .035*Math.sin(a*9+seed*.002);
+  g.beginPath();
+  for (let n=0;n<=points;n++) {
+    const a=n/points*Math.PI*2, d=r*noise(a), px=x+Math.cos(a)*d, py=y+Math.sin(a)*d*.78;
+    if (n===0) g.moveTo(px,py); else g.lineTo(px,py);
+  }
+  g.closePath();
+}
+
 /* ================= DRAWING ================= */
 function circle(x, y, r, c) { g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
 function text(s, x, y, size = 13, c = '#fff') { g.font = `bold ${size}px system-ui,sans-serif`; g.textAlign = 'center'; g.fillStyle = 'rgba(0,0,0,.6)'; g.fillText(s, x + 1, y + 1); g.fillStyle = c; g.fillText(s, x, y); }
@@ -360,7 +406,7 @@ function drawFishingRod(x, y, angle, casting, now) {
   }
 }
 // Small settlement and harbor details make claimed islands read like territories.
-function drawIslandSettlement(x, y, ownerId, hallLevel = 1) {
+function drawIslandSettlement(x, y, ownerId, hallLevel = 1, radius = LAND) {
   const owned = !!ownerId;
   const flag = flagCol(ownerId);
   // A low-contrast territorial boundary follows the island's interior coast.
@@ -370,11 +416,13 @@ function drawIslandSettlement(x, y, ownerId, hallLevel = 1) {
     g.globalAlpha = ownerId === me?.id ? 0.72 : 0.48;
     g.lineWidth = 3;
     g.setLineDash([9, 7]);
-    g.beginPath(); g.arc(x, y, LAND - 34, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(x, y, radius - 34, 0, Math.PI * 2); g.stroke();
     g.setLineDash([]);
     g.restore();
   }
   // Main hall and two cottages, drawn as tiny top-down buildings.
+  const scale = radius / 155;
+  g.save(); g.translate(x,y); g.scale(scale,scale); g.translate(-x,-y);
   const buildings = [[-20, 12, 17, 13], [4, 2, 13, 11], [17, 21, 12, 10]];
   for (let n = 0; n < buildings.length; n++) {
     const [bx, by, bw, bh] = buildings[n];
@@ -392,10 +440,12 @@ function drawIslandSettlement(x, y, ownerId, hallLevel = 1) {
   for (let px = 2; px < 37; px += 8) { g.beginPath(); g.moveTo(px, -7); g.lineTo(px, 6); g.stroke(); }
   g.fillStyle = '#4a3927'; g.fillRect(34, -12, 5, 23);
   g.restore();
+  g.restore();
 }
 
 function draw(t) {
   const W = cv.width, Hh = cv.height; camx = P.x - W / 2; camy = P.y - Hh / 2;
+  ensureWorldAround(P.x,P.y);
   g.fillStyle = '#1e90c8'; g.fillRect(0, 0, W, Hh);
   g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2;
   for (let y = -(camy % 60) - 60; y < Hh; y += 60) { g.beginPath(); for (let x = 0; x <= W; x += 40) g.lineTo(x, y + Math.sin((x + camx) / 50 + t / 700 + y) * 6); g.stroke(); }
@@ -403,10 +453,22 @@ function draw(t) {
   g.save(); g.translate(W / 2, Hh / 2); g.rotate(-0.018); g.translate(-W / 2, -Hh / 2);
   for (const i of isl) {
     const x = i.wx - camx, y = i.wy - camy;
-    if (x < -200 || y < -200 || x > W + 200 || y > Hh + 200) continue;
-    circle(x, y, SHORE, '#e8d27a'); circle(x, y, LAND - 25, BIO[i.row.biome] || '#4caf50');
-    drawIslandSettlement(x, y, i.row.owner_id, islandBuilds(i.row.id).mainhall || 1);
+    const r = islandRadius(i); if (x < -r-100 || y < -r-100 || x > W + r+100 || y > Hh + r+100) continue;
+    const radius = islandRadius(i);
+    shapeIsland(i,x,y,t); g.fillStyle = '#e8d27a'; g.fill();
+    g.save(); shapeIsland(i,x,y,t); g.clip();
+    g.fillStyle = BIO[i.row.biome] || '#4caf50'; g.fillRect(x-radius-2,y-radius-2,radius*2+4,radius*2+4);
+    // Terrain patches create visual variety across much larger islands.
+    const rng = seededRandom(i.seed || hash(i.row.id || i.key || i.row.name));
+    for (let patch=0;patch<30;patch++) {
+      const px=x+(rng()-.5)*radius*1.65, py=y+(rng()-.5)*radius*1.35, pr=8+rng()*radius*.12;
+      circle(px,py,pr, patch%3===0?'rgba(230,213,135,.20)':patch%3===1?'rgba(35,99,52,.22)':'rgba(255,255,255,.07)');
+    }
+    g.restore();
+    // Inner coastline highlights the shore against the ocean.
+    g.save(); shapeIsland(i,x,y,t); g.strokeStyle='rgba(255,245,185,.8)'; g.lineWidth=5; g.stroke(); g.restore();
     const levels = islandBuilds(i.row.id);
+    drawIslandSettlement(x, y, i.row.owner_id, levels.mainhall || 1, radius);
     text('H' + (levels.mainhall || 1), x - 12, y + 43, 9, '#fff4bf');
     if (levels.worker || levels.farm || levels.lumber || levels.mine) {
       const stations = [['worker',-48,48,'#d6c08b'],['farm',-72,20,'#7fbf68'],['lumber',-63,69,'#a96d35'],['mine',-40,87,'#8e9698']];
@@ -435,16 +497,29 @@ function draw(t) {
       g.fillStyle = '#9c6a3a'; g.fillRect(x+105,y+34,12+levels.dock*5,9);
       text('D'+levels.dock,x+116,y+54,9,'#fff');
     }
-    for (const p of i.palms) { circle(x + p[0], y + p[1], 19, '#2e8b3a'); circle(x + p[0], y + p[1], 6, '#8a5a2b'); }
+    if (!i.palms.length) {
+      const rng = seededRandom(i.seed || hash(i.row.id || i.key || i.row.name));
+      const count = i.generated ? 25 + Math.floor(rng()*40) : 12;
+      for(let n=0;n<count;n++) {
+        const a=rng()*Math.PI*2, d=Math.sqrt(rng())*radius*.78;
+        i.palms.push([Math.cos(a)*d,Math.sin(a)*d*.76]);
+      }
+    }
+    for (const p of i.palms) {
+      const treeScale = i.generated ? .7 + (i.seed%5)*.08 : 1;
+      circle(x+p[0],y+p[1],(i.generated?11:15)*treeScale,'#26733b');
+      circle(x+p[0]-2,y+p[1]-2,(i.generated?7:9)*treeScale,'#3d9948');
+      circle(x+p[0],y+p[1],3*treeScale,'#8a5a2b');
+    }
     if (i.row.owner_id) {
       const ownerColor = i.row.owner_id === me.id ? '#d8c46a' : '#a95a50';
-      drawWarship(x + 95, y + 65, 'destroyer', ownerColor, -0.35);
+      drawWarship(x + radius*.58, y + radius*.40, 'destroyer', ownerColor, -0.35);
       const ownedCount = isl.filter(q => q.row.owner_id === i.row.owner_id).length;
-      if (ownedCount >= 2) drawWarship(x - 95, y + 78, 'patrol', ownerColor, 0.3);
-      if (ownedCount >= 3) drawWarship(x + 5, y + 115, 'battleship', ownerColor, -0.15);
+      if (ownedCount >= 2) drawWarship(x - radius*.58, y + radius*.48, 'patrol', ownerColor, 0.3);
+      if (ownedCount >= 3) drawWarship(x + radius*.05, y + radius*.72, 'battleship', ownerColor, -0.15);
     }
     g.fillStyle = '#fff'; g.fillRect(x - 2, y - 40, 4, 40); g.fillStyle = flagCol(i.row.owner_id); g.fillRect(x + 2, y - 40, 26, 16);
-    text(i.row.name, x, y - 52, 15);
+    text(i.row.name, x, y - radius - 15, i.generated ? 12 : 15);
   }
   const now = performance.now();
   for (const r of Object.values(remotes)) drawPlayer(r, now);
@@ -500,7 +575,7 @@ function loop(t) {
   const fy = (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0);
   if (fx || fy) {
     const v = (P.boat ? 300 : 170) * dt / Math.hypot(fx, fy), nx = P.x + fx * v, ny = P.y + fy * v;
-    const ok = (x, y) => Math.abs(x) < 2200 && Math.abs(y) < 1500 && landAt(x, y) !== P.boat;   // boat = water only, walking = land only
+    const ok = (x, y) => Math.abs(x) < WORLD_LIMIT_X && Math.abs(y) < WORLD_LIMIT_Y && landAt(x, y) !== P.boat;   // boat = water only, walking = land only
     if (ok(nx, ny)) { P.x = nx; P.y = ny; } else if (ok(nx, P.y)) P.x = nx; else if (ok(P.x, ny)) P.y = ny;
     P.a = Math.atan2(fy, fx);
   }
@@ -544,8 +619,8 @@ async function startGame(mode) {
   try { rows = await load(); }
   catch (e) { err('Could not load game data: ' + e.message); $('play').disabled = false; $('solo').disabled = false; return; }
   if (!rows.length) { err('No islands found. Check your Supabase tables and policies.'); $('play').disabled = false; $('solo').disabled = false; return; }
-  isl = rows.map(row => ({row, wx: (row.x - 50) * SCALE, wy: (row.y - 50) * SCALE,
-    palms: [0, 1, 2, 3, 4, 5, 6].map(k => { const a = k * 2.4 + row.x, d = 25 + (k * 37 % 45); return [Math.cos(a) * d, Math.sin(a) * d]; })}));
+  isl = rows.map(row => ({key:row.id,row,wx:(row.x-50)*SCALE,wy:(row.y-50)*SCALE,seed:hash(row.id),generated:false,palms:[0,1,2,3,4,5,6].map(k=>{const a=k*2.4+row.x,d=25+(k*37%45);return [Math.cos(a)*d,Math.sin(a)*d];})}));
+  ensureWorldAround(0,0);
   const s = isl.find(i => i.row.id === 'starter-cove') || isl[0];
   P.x = s.wx; P.y = s.wy + 45; P.n = st.name; P.c = hue(me.id);
   loadDevelopment();
