@@ -33,7 +33,7 @@ let development = {materials:25, buildings:{}, discovered:[]};
 const devKey = () => 'fih-conquest-development-v1:' + me.id;
 function saveDevelopment() { if (!me) return; try { localStorage.setItem(devKey(), JSON.stringify(development)); } catch (_) {} }
 function loadDevelopment() { try { const d = JSON.parse(localStorage.getItem(devKey()) || 'null'); if (d && typeof d === 'object') development = {materials:Math.max(0, Number(d.materials)||0), buildings:d.buildings && typeof d.buildings==='object' ? d.buildings : {}, discovered:Array.isArray(d.discovered) ? d.discovered.filter(n => FISH_CATALOG.includes(n)) : []}; } catch (_) {} }
-const islandBuilds = id => development.buildings[id] || (development.buildings[id] = {mainhall:1});
+const islandBuilds = id => { const b = development.buildings[id] || (development.buildings[id] = {}); if (!Number.isFinite(b.mainhall)) b.mainhall = 1; return b; };
 function discoverFish() {
   const undiscovered = FISH_CATALOG.filter(n => !development.discovered.includes(n));
   if (!undiscovered.length || Math.random() > 0.34) return null;
@@ -171,7 +171,7 @@ function render() {
     h = '<h3>Online now</h3>' + Object.values(online).map(o => `<div class="row"><span>${o.name}</span><span>Lv ${o.lv}</span></div>`).join('')
       + '<h3>Island leaderboard</h3>' + (board || '<small>No islands claimed yet.</small>');
   }
-  if (tab === 'set') h = '<h3>Field Manual</h3><p><small>WASD / arrows: move. B: board boat. M: territory. N: naval command. P: players. I: supplies. Enter: chat.</small></p><button id="lo">Sign out</button>';
+  if (tab === 'set') h = '<h3>Field Manual</h3><p><small>WASD / arrows: move. B: board boat. F: fish. M: territory. N: naval command. G: develop. A: aquarium. P: players. I: supplies. Enter: chat.</small></p><button id="lo">Sign out</button>';
   p.innerHTML = h + '<p><button class="alt" id="cl">Close</button></p>';
 }
 async function sell(f, q) {
@@ -231,7 +231,7 @@ async function reel() {
   busy = false; lastFish = performance.now();
   if (error) return toast(error.message);
   inv[data.fish] = data.quantity; st.xp = data.xp; st.level = data.level;
-  development.materials += 1; const discovery = discoverFish(); saveDevelopment();
+  development.materials += 1; discoverFish(); saveDevelopment();
   pops.push({x: P.x, y: P.y - 30, t: performance.now(), text: `+1 ${data.fish}`, c: FCOL[data.fish] || '#fff'});
   toast(`You caught a ${data.fish}! +5 XP`);
   if (RARE.includes(data.fish)) { feed(`You caught a ${data.fish}!`); ch?.send({type:'broadcast', event:'catch', payload:{id: me.id, n: st.name, f: data.fish}}); }
