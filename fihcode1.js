@@ -640,17 +640,42 @@ function loop(t) {
 const fit = () => { cv.width = innerWidth; cv.height = innerHeight; };
 addEventListener('resize', fit); fit();
 addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || !started) return;
-  const k = e.key.toLowerCase(); keys[k] = 1;
+  const chatInput = $('chat');
+  // Never let game controls steal keys while the player is typing.
+  if (e.target === chatInput || e.target?.tagName === 'INPUT' || e.target?.tagName === 'TEXTAREA' || !started) return;
+  const k = e.key.toLowerCase();
+  if (k === 'enter') {
+    if (gameMode === 'multiplayer' && chatInput && !chatInput.classList.contains('hide')) {
+      e.preventDefault();
+      chatInput.focus();
+    }
+    return;
+  }
+  keys[k] = 1;
   const T = {i:'inv', m:'map', p:'ppl', n:'fleet', g:'build'};
   if (k === 'f') cast(); if (k === 'b') boat();
-  if (k === 'enter') { e.preventDefault(); $('chat').focus(); }
   if (EMO[+k - 1]) emote(+k - 1);
   if (T[k]) { tab = tab === T[k] ? null : T[k]; render(); }
   if (k === 'escape') { tab = null; render(); }
 });
-addEventListener('keyup', e => keys[e.key.toLowerCase()] = 0);
-if ($('chat')) $('chat').onkeydown = e => { if (e.key === 'Enter') { sendChat(); $('chat').blur(); } if (e.key === 'Escape') $('chat').blur(); };
+addEventListener('keyup', e => {
+  if (e.target === $('chat') || e.target?.tagName === 'INPUT' || e.target?.tagName === 'TEXTAREA') return;
+  keys[e.key.toLowerCase()] = 0;
+});
+if ($('chat')) {
+  $('chat').onkeydown = e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      sendChat();
+      // Keep focus so another message can be typed immediately.
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      $('chat').blur();
+    }
+  };
+  $('chat').addEventListener('pointerdown', () => { if (started && gameMode === 'multiplayer') $('chat').focus(); });
+}
 if ($('fish')) $('fish').onclick = cast; if ($('boat')) $('boat').onclick = boat;
 
 async function startGame(mode) {
