@@ -1,39 +1,44 @@
-import * as THREE from 'three';
 import {createClient} from '@supabase/supabase-js';
 
 /* ================= SETTINGS ================= */
 const SUPABASE_URL = 'https://ucxustzrevjlktcfsmfy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_DlflO5eJAotVhCv-q16Ceg_-fWZQ8Kr';
-const SCALE = 7;      // island map units -> world units
-const RADIUS = 26;    // island size
+const SCALE = 36, LAND = 105, SHORE = 122;        // map units -> pixels, island sizes
 const PRICE = {Sardine:4, Mackerel:7, Clownfish:10, Tuna:18, 'Golden Koi':35}; // display only, the database sets real prices
-
+const FCOL = {Sardine:'#9fb7c9', Mackerel:'#5fa8d3', Clownfish:'#ff8c42', Tuna:'#e74c3c', 'Golden Koi':'#ffd700'};
+const RARE = ['Tuna', 'Golden Koi'];
+const EMO = ['👋', '🎣', '🎉', '❓'];
+const BIO = {tropical:'#4caf50', reef:'#2bb6a8', mist:'#9fb7c9', beach:'#e8d27a', rocky:'#8d8d8d', remote:'#8a6bbd'};
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
-const $ = id => document.getElementById(id);
+const $ = id => document.getElementById(id), cv = $('c'), g = cv.getContext('2d');
 
-/* ================= GAME STATE ================= */
+/* ================= STATE ================= */
 let me = null, st = {coins:0, xp:0, level:1, name:'Sailor'}, inv = {}, isl = [];
 let ch = null, started = false, online = {}, remotes = {}, tab = null;
-let scene, cam, rd, pl, boatOn = false, yaw = 0, pitch = .45, dist = 14, keys = {}, busy = false;
+let P = {x:0, y:0, a:0, boat:false, e:'', eUntil:0, say:'', sayUntil:0, n:'', c:''};
+let keys = {}, fs = null, busy = false, lastFish = 0, lastChat = 0, pops = [], camx = 0, camy = 0;
 
 /* ================= HELPERS ================= */
-const toast = m => {
-  const t = $('toast');
-  t.textContent = m; t.style.opacity = 1;
-  clearTimeout(t.h); t.h = setTimeout(() => t.style.opacity = 0, 2800);
-};
+const toast = m => { const t = $('toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(t.h); t.h = setTimeout(() => t.style.opacity = 0, 2600); };
 const err = m => $('err').textContent = m || '';
 const hash = s => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-const col = id => new THREE.Color().setHSL(hash(id) % 360 / 360, .7, .55);
-const flagCol = o => o ? (o === me.id ? 0x00e5ff : 0xffc107) : 0xcccccc;
-// ground height at a point: 0 = open water, 0.4+ = walkable land
-const H = (x, z) => {
-  let h = 0;
-  for (const i of isl) {
-    const d = Math.hypot(x - i.wx, z - i.wz);
-    if (d < RADIUS) h = Math.max(h, Math.min(1.6, (RADIUS - d) * .25));
-  }
-  return h;
+const hue = id => `hsl(${hash(id) % 360},70%,55%)`;
+const flagCol = o => o ? (o === me.id ? '#00e5ff' : '#ffc107') : '#cccccc';
+const nm = id => id === me.id ? 'You' : (online[id]?.name || 'Another sailor');
+function feed(msg) {
+  const d = document.createElement('div'); d.textContent = msg; $('feed').append(d);
+  while ($('feed').children.length > 7) $('feed').firstChild.remove();
+  setTimeout(() => d.remove(), 15000);
+}
+const landAt = (x, y) => isl.some(i => Math.hypot(x - i.wx, y - i.wy) < LAND);
+const here = () => isl.find(i => Math.hypot(P.x - i.wx, P.y - i.wy) < LAND);
+// look around the player for land (want=true) or water (want=false)
+const probe = (want, r) => {
+  for (let d = 20; d <= r; d += 20)
+    for (let a = 0; a < 6.28; a += .5) {
+      const x = P.x + Math.cos(a) * d, y = P.y + Math.sin(a) * d;
+      if (landAt(x, y) === want) return [x, y];
+    }
 };
 
 /* ================= ACCOUNTS ================= */
@@ -42,11 +47,7 @@ const creds = () => {
   if (!email || password.length < 6) { err('Enter an email and a password of 6+ characters.'); return null; }
   return {email, password};
 };
-$('bin').onclick = async () => {
-  err(); const c = creds(); if (!c) return;
-  const {error} = await sb.auth.signInWithPassword(c);
-  if (error) err(error.message);
-};
+$('bin').onclick = async () => { err(); const c = creds(); if (!c) return; const {error} = await sb.auth.signInWithPassword(c); if (error) err(error.message); };
 $('bup').onclick = async () => {
   err(); const c = creds(); if (!c) return;
   const username = $('un').value.trim();
@@ -59,8 +60,7 @@ $('bout').onclick = () => sb.auth.signOut();
 sb.auth.onAuthStateChange((e, s) => {
   me = s?.user || null;
   if (!me && started) { location.reload(); return; }
-  $('auth').classList.toggle('hide', !!me);
-  $('ready').classList.toggle('hide', !me);
+  $('auth').classList.toggle('hide', !!me); $('ready').classList.toggle('hide', !me);
   if (me) $('who').textContent = 'Signed in as ' + me.email;
 });
 
@@ -74,65 +74,53 @@ async function load() {
   ]);
   let name = p.data?.username || 'Sailor';
   const md = me.user_metadata?.username;
-  if (name === 'Sailor' && md && md !== 'Sailor') {
-    const r = await sb.rpc('fih_set_username', {p_username: md});
-    if (!r.error) name = md;
-  }
-  st = {...st, ...(s.data || {}), name};
-  inv = {};
+  if (name === 'Sailor' && md && md !== 'Sailor') { const r = await sb.rpc('fih_set_username', {p_username: md}); if (!r.error) name = md; }
+  st = {...st, ...(s.data || {}), name}; inv = {};
   (i.data || []).forEach(r => inv[r.fish_type] = r.quantity);
   return o.data || [];
 }
-const hud = () => { $('stats').innerHTML = `<b>${st.name}</b> &nbsp; ${st.coins} coins &nbsp; Lv ${st.level} &nbsp; ${st.xp} XP`; };
+const hud = () => { $('stats').innerHTML = `<b>${st.name}</b> &nbsp; ${st.coins} coins &nbsp; Lv ${st.level} <progress max="100" value="${st.xp % 100}"></progress>`; };
 
 /* ================= PANELS ================= */
-const nm = id => id === me.id ? 'You' : (online[id]?.name || 'Another sailor');
-
 function render() {
   const p = $('panel');
   if (!tab) { p.classList.add('hide'); return; }
-  p.classList.remove('hide');
-  let h = '';
+  p.classList.remove('hide'); let h = '';
   if (tab === 'inv') {
+    const total = Object.keys(PRICE).reduce((a, f) => a + (inv[f] || 0), 0);
     h = '<h3>Inventory &amp; Shop</h3>' + Object.keys(PRICE).map(f => {
       const q = inv[f] || 0;
       return `<div class="row"><span>${f} x${q} <small>(about ${PRICE[f]} coins each)</small></span>
-        <span><button data-s="${f}|1" ${q ? '' : 'disabled'}>Sell 1</button>
-        <button class="alt" data-s="${f}|${q}" ${q ? '' : 'disabled'}>Sell all</button></span></div>`;
-    }).join('');
+        <button data-s="${f}|${q}" ${q ? '' : 'disabled'}>Sell all</button></div>`;
+    }).join('') + `<p><button data-all="1" ${total ? '' : 'disabled'}>Sell every fish</button></p>`;
   }
   if (tab === 'map') {
-    h = '<h3>Island conquest</h3>' + isl.map(i => {
-      const o = i.row.owner_id;
-      return `<div class="row"><span><b>${i.row.name}</b> <small>${i.row.biome}, ${i.row.claim_cost ? i.row.claim_cost + ' coins' : 'free'}</small><br>
-        <small>${o ? 'Owner: ' + nm(o) : 'Unclaimed'}</small></span>
-        ${o ? '' : `<button data-c="${i.row.id}" ${st.coins < i.row.claim_cost ? 'disabled' : ''}>Claim</button>`}</div>`;
+    h = '<h3>Island conquest</h3><small>Stand on an island to claim it.</small>' + isl.map(i => {
+      const o = i.row.owner_id, cost = i.row.claim_cost;
+      const act = o ? '' : (here() === i ? `<button data-c="${i.row.id}" ${st.coins < cost ? 'disabled' : ''}>Claim</button>` : '<small>Sail there</small>');
+      return `<div class="row"><span><b>${i.row.name}</b> <small>${i.row.biome}, ${cost ? cost + ' coins' : 'free'}</small><br><small>${o ? 'Owner: ' + nm(o) : 'Unclaimed'}</small></span>${act}</div>`;
     }).join('');
   }
   if (tab === 'ppl') {
-    const cnt = {};
-    isl.forEach(i => i.row.owner_id && (cnt[i.row.owner_id] = (cnt[i.row.owner_id] || 0) + 1));
-    const board = Object.entries(cnt).sort((a, b) => b[1] - a[1])
-      .map(([id, n], k) => `<div class="row"><span>#${k + 1} ${nm(id)}</span><span>${n} island${n > 1 ? 's' : ''}</span></div>`).join('');
-    h = '<h3>Online now</h3>' + Object.values(online).map(o => `<div class="row">${o.name}</div>`).join('')
+    const cnt = {}; isl.forEach(i => i.row.owner_id && (cnt[i.row.owner_id] = (cnt[i.row.owner_id] || 0) + 1));
+    const board = Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(([id, n], k) => `<div class="row"><span>#${k + 1} ${nm(id)}</span><span>${n} island${n > 1 ? 's' : ''}</span></div>`).join('');
+    h = '<h3>Online now</h3>' + Object.values(online).map(o => `<div class="row"><span>${o.name}</span><span>Lv ${o.lv}</span></div>`).join('')
       + '<h3>Island leaderboard</h3>' + (board || '<small>No islands claimed yet.</small>');
   }
-  if (tab === 'set') {
-    h = '<h3>Settings</h3><p><small>WASD move, drag mouse to look, scroll to zoom. F fish, B board or leave boat, I shop, M conquest, P players.</small></p><button id="lo">Sign out</button>';
-  }
+  if (tab === 'set') h = '<h3>Settings</h3><p><small>WASD or arrows move. F cast and reel. B board or leave boat. I shop, M conquest, P players. Enter chat. 1-4 emotes.</small></p><button id="lo">Sign out</button>';
   p.innerHTML = h + '<p><button class="alt" id="cl">Close</button></p>';
 }
-
+async function sell(f, q) {
+  const {data, error} = await sb.rpc('fih_sell_fish', {p_fish_type: f, p_quantity: q});
+  if (error) { toast(error.message); return 0; }
+  st.coins = data.coins; inv[f] -= q; return data.earned;
+}
 $('panel').onclick = async e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'cl') { tab = null; return render(); }
   if (b.id === 'lo') return sb.auth.signOut();
-  if (b.dataset.s) {
-    const [f, q] = b.dataset.s.split('|');
-    const {data, error} = await sb.rpc('fih_sell_fish', {p_fish_type: f, p_quantity: +q});
-    if (error) return toast(error.message);
-    st.coins = data.coins; inv[f] -= +q; toast(`Sold for ${data.earned} coins`);
-  }
+  if (b.dataset.s) { const [f, q] = b.dataset.s.split('|'); const n = await sell(f, +q); if (n) toast(`Sold for ${n} coins`); }
+  if (b.dataset.all) { let n = 0; for (const f of Object.keys(PRICE)) if (inv[f] > 0) n += await sell(f, inv[f]); toast(`Sold everything for ${n} coins`); }
   if (b.dataset.c) {
     const {data, error} = await sb.rpc('fih_claim_island', {p_island_id: b.dataset.c});
     if (error) return toast(error.message);
@@ -141,142 +129,48 @@ $('panel').onclick = async e => {
   hud(); render();
 };
 document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { tab = tab === b.dataset.t ? null : b.dataset.t; render(); });
-
 function setOwner(id, o) {
-  const i = isl.find(i => i.row.id === id); if (!i) return;
+  const i = isl.find(i => i.row.id === id);
+  if (!i || i.row.owner_id === o) return;
   i.row.owner_id = o;
-  i.flag.material.color.set(flagCol(o));
+  if (o) feed(`${nm(o)} claimed ${i.row.name}!`);
   if (tab) render();
 }
 
-/* ================= 3D WORLD ================= */
-function label(t) {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
-  const x = c.getContext('2d');
-  x.font = 'bold 30px system-ui,sans-serif'; x.textAlign = 'center';
-  x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, 8, 256, 48);
-  x.fillStyle = '#fff'; x.fillText(t, 128, 44);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false}));
-  s.scale.set(8, 2, 1);
-  return s;
-}
-const M = (g, c) => new THREE.Mesh(g, new THREE.MeshStandardMaterial({color: c, flatShading: true}));
-
-function makeChar(c) {
-  const g = new THREE.Group();
-  const body = M(new THREE.CylinderGeometry(.5, .5, 1.2, 8), c);
-  const head = M(new THREE.SphereGeometry(.4, 8, 6), 0xffd6a5);
-  const boat = M(new THREE.BoxGeometry(2.4, .7, 5), 0x8a5a2b);
-  body.position.y = .9; head.position.y = 1.8; boat.position.y = .2; boat.visible = false;
-  g.userData.boat = boat;
-  g.add(body, head, boat);
-  return g;
-}
-
-function buildIsland(row) {
-  const BIO = {tropical:0x4caf50, reef:0x2bb6a8, mist:0x9fb7c9, beach:0xe8d27a, rocky:0x8d8d8d, remote:0x8a6bbd};
-  const wx = (row.x - 50) * SCALE, wz = (row.y - 50) * SCALE;
-  const g = new THREE.Group(); g.position.set(wx, 0, wz);
-
-  const base = M(new THREE.CylinderGeometry(RADIUS - 6.4, RADIUS, 1.6, 10), 0xe8d27a); base.position.y = .8; g.add(base);
-  const top = M(new THREE.CircleGeometry(RADIUS - 9, 10), BIO[row.biome] || 0x4caf50);
-  top.rotation.x = -Math.PI / 2; top.position.y = 1.62; g.add(top);
-
-  for (let k = 0; k < 7; k++) {                       // palm trees
-    const a = k * 2.4 + row.x, d = 4 + (k * 5.3 % 9), t = new THREE.Group();
-    t.position.set(Math.cos(a) * d, 1.6, Math.sin(a) * d);
-    const trunk = M(new THREE.CylinderGeometry(.25, .4, 4, 6), 0x8a5a2b);
-    const leaves = M(new THREE.ConeGeometry(2.2, 1.4, 6), 0x2e8b3a);
-    trunk.position.y = 2; leaves.position.y = 4.3;
-    t.add(trunk, leaves); g.add(t);
-  }
-  for (let k = 0; k < 3; k++) {                       // rocks
-    const r = M(new THREE.DodecahedronGeometry(1 + k * .4), 0x777777);
-    r.position.set(Math.cos(k * 2 + 1) * (RADIUS - 12), 1.8, Math.sin(k * 2 + 1) * (RADIUS - 12)); g.add(r);
-  }
-  const dock = M(new THREE.BoxGeometry(5, .3, 2), 0x9b6a35); dock.position.set(RADIUS - 5, 1.3, 0); g.add(dock);
-
-  const flag = M(new THREE.BoxGeometry(1.8, 1.2, .1), flagCol(row.owner_id));
-  const pole = M(new THREE.CylinderGeometry(.1, .1, 6, 5), 0xffffff);
-  flag.position.set(.9, 7.6, 0); pole.position.y = 4.6;
-  const lb = label(row.name); lb.position.y = 11;
-  g.add(pole, flag, lb);
-  scene.add(g);
-  return {row, wx, wz, flag};
-}
-
-function build() {
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x8fd3f0);
-  scene.fog = new THREE.Fog(0x8fd3f0, 120, 520);
-  cam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, .1, 1500);
-  rd = new THREE.WebGLRenderer({antialias: true});
-  rd.setSize(innerWidth, innerHeight);
-  rd.setPixelRatio(Math.min(devicePixelRatio, 2));
-  document.body.prepend(rd.domElement);
-
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x3a6a7a, 1.1));
-  const sun = new THREE.DirectionalLight(0xfff2cc, 1.4); sun.position.set(80, 120, 40); scene.add(sun);
-  const sea = M(new THREE.PlaneGeometry(2000, 2000), 0x1e90c8);
-  sea.material.transparent = true; sea.material.opacity = .92; sea.rotation.x = -Math.PI / 2; scene.add(sea);
-
-  isl = isl.map(buildIsland);
-  const start = isl.find(i => i.row.id === 'starter-cove') || isl[0];
-  pl = makeChar(col(me.id));
-  pl.position.set(start.wx, 1.6, start.wz + 6);
-  scene.add(pl);
-
-  addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT') return;
-    const k = e.key.toLowerCase(); keys[k] = 1;
-    const T = {i:'inv', m:'map', p:'ppl'};
-    if (k === 'f') fish();
-    if (k === 'b') boat();
-    if (T[k]) { tab = tab === T[k] ? null : T[k]; render(); }
-    if (k === 'escape') { tab = null; render(); }
-  });
-  addEventListener('keyup', e => keys[e.key.toLowerCase()] = 0);
-  let drag = false;
-  addEventListener('pointerdown', e => drag = e.target.tagName === 'CANVAS');
-  addEventListener('pointerup', () => drag = false);
-  addEventListener('pointermove', e => {
-    if (drag) { yaw -= e.movementX * .005; pitch = Math.max(.1, Math.min(1.2, pitch + e.movementY * .005)); }
-  });
-  addEventListener('wheel', e => { dist = Math.max(6, Math.min(30, dist + e.deltaY * .02)); });
-  addEventListener('resize', () => { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); rd.setSize(innerWidth, innerHeight); });
-  $('fish').onclick = fish;
-  $('boat').onclick = boat;
-}
-
 /* ================= ACTIONS ================= */
-// look around the player for land (want=true) or water (want=false)
-const probe = (want, r) => {
-  for (let d = 2; d <= r; d += 1.5)
-    for (let a = 0; a < 6.28; a += .4) {
-      const x = pl.position.x + Math.cos(a) * d, z = pl.position.z + Math.sin(a) * d;
-      if ((H(x, z) >= .4) === want) return [x, z];
-    }
-};
 function boat() {
-  if (!boatOn) {
-    const p = probe(false, 8); if (!p) return toast('Walk to the shore to board your boat.');
-    pl.position.set(p[0], .2, p[1]); boatOn = true;
-  } else {
-    const p = probe(true, 9); if (!p) return toast('Sail closer to an island to dock.');
-    pl.position.set(p[0], H(p[0], p[1]), p[1]); boatOn = false;
-  }
-  pl.userData.boat.visible = boatOn;
+  if (!P.boat) { const p = probe(false, 80); if (!p) return toast('Walk to the shore to board your boat.'); [P.x, P.y] = p; P.boat = true; }
+  else { const p = probe(true, 90); if (!p) return toast('Sail closer to an island to dock.'); [P.x, P.y] = p; P.boat = false; }
 }
-async function fish() {
+function cast() {                       // F: cast, then reel in when "!" shows
   if (busy) return;
-  if (!boatOn && !probe(false, 6)) return toast('Stand near the water or use your boat to fish.');
-  busy = true;
+  const n = performance.now();
+  if (!fs) {
+    if (!(P.boat || probe(false, 70))) return toast('Stand by the water or board your boat.');
+    if (n - lastFish < 3000) return toast('Rod is cooling down...');
+    fs = {ph:'wait', bite: n + 1000 + Math.random() * 2200}; return;
+  }
+  if (fs.ph === 'wait') { fs = null; return toast('Too early! The fish got spooked.'); }
+  reel();
+}
+async function reel() {
+  fs = null; busy = true;
   const {data, error} = await sb.rpc('fih_fish');
-  busy = false;
+  busy = false; lastFish = performance.now();
   if (error) return toast(error.message);
   inv[data.fish] = data.quantity; st.xp = data.xp; st.level = data.level;
+  pops.push({x: P.x, y: P.y - 30, t: performance.now(), text: `+1 ${data.fish}`, c: FCOL[data.fish] || '#fff'});
   toast(`You caught a ${data.fish}! +5 XP`);
+  if (RARE.includes(data.fish)) { feed(`You caught a ${data.fish}!`); ch?.send({type:'broadcast', event:'catch', payload:{id: me.id, n: st.name, f: data.fish}}); }
+  ch?.track({name: st.name, lv: st.level});
   hud(); if (tab) render();
+}
+function emote(i) { P.e = EMO[i]; P.eUntil = performance.now() + 3000; }
+function sendChat() {
+  const t = $('chat').value.trim().slice(0, 80), n = performance.now(); $('chat').value = '';
+  if (!t || n - lastChat < 1000) return;
+  lastChat = n; P.say = t; P.sayUntil = n + 4000; feed(`${st.name}: ${t}`);
+  ch?.send({type:'broadcast', event:'chat', payload:{id: me.id, n: st.name, t}});
 }
 
 /* ================= MULTIPLAYER ================= */
@@ -284,28 +178,69 @@ function join() {
   ch = sb.channel('fih-world', {config:{presence:{key: me.id}, broadcast:{self:false}}});
   ch.on('presence', {event:'sync'}, () => {
       online = {};
-      for (const [id, a] of Object.entries(ch.presenceState())) online[id] = {name: a[0]?.name || 'Sailor'};
-      for (const id in remotes) if (!online[id]) { scene.remove(remotes[id].g); delete remotes[id]; }
+      for (const [id, a] of Object.entries(ch.presenceState())) online[id] = {name: a[0]?.name || 'Sailor', lv: a[0]?.lv || 1};
+      for (const id in remotes) if (!online[id]) delete remotes[id];
       if (tab) render();
     })
     .on('broadcast', {event:'pos'}, ({payload: d}) => {
       if (d.id === me.id) return;
       let r = remotes[d.id];
-      if (!r) {
-        const g = makeChar(col(d.id)), l = label(String(d.n).slice(0, 16));
-        l.position.y = 3.2; g.add(l); g.position.set(d.x, d.y, d.z); scene.add(g);
-        r = remotes[d.id] = {g, t: new THREE.Vector3(), ry: 0};
-      }
-      r.t.set(d.x, d.y, d.z); r.ry = d.r; r.g.userData.boat.visible = !!d.b;
+      if (!r) r = remotes[d.id] = {x: d.x, y: d.y, c: hue(d.id), say: '', sayUntil: 0};
+      Object.assign(r, {tx: d.x, ty: d.y, a: d.a, boat: !!d.b, e: String(d.e || '').slice(0, 4), n: String(d.n).slice(0, 16), seen: performance.now()});
     })
+    .on('broadcast', {event:'chat'}, ({payload: d}) => {
+      if (d.id === me.id) return;
+      const t = String(d.t).slice(0, 80); feed(`${String(d.n).slice(0, 16)}: ${t}`);
+      const r = remotes[d.id]; if (r) { r.say = t; r.sayUntil = performance.now() + 4000; }
+    })
+    .on('broadcast', {event:'catch'}, ({payload: d}) => { if (d.id !== me.id && RARE.includes(d.f)) feed(`${String(d.n).slice(0, 16)} caught a ${d.f}!`); })
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'fih_islands'}, p => setOwner(p.new.id, p.new.owner_id))
     .subscribe(s => {
-      if (s === 'SUBSCRIBED') ch.track({name: st.name});
-      else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') {
-        toast('Connection lost, reconnecting...');
-        setTimeout(() => { sb.removeChannel(ch); join(); }, 3000);
-      }
+      if (s === 'SUBSCRIBED') ch.track({name: st.name, lv: st.level});
+      else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') { toast('Connection lost, reconnecting...'); setTimeout(() => { sb.removeChannel(ch); join(); }, 3000); }
     });
+}
+
+/* ================= DRAWING ================= */
+function circle(x, y, r, c) { g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
+function text(s, x, y, size = 13, c = '#fff') { g.font = `bold ${size}px system-ui,sans-serif`; g.textAlign = 'center'; g.fillStyle = 'rgba(0,0,0,.6)'; g.fillText(s, x + 1, y + 1); g.fillStyle = c; g.fillText(s, x, y); }
+function drawPlayer(p, now) {
+  const x = p.x - camx, y = p.y - camy;
+  if (p.boat) { g.fillStyle = '#8a5a2b'; g.beginPath(); g.ellipse(x, y, 28, 16, p.a || 0, 0, 7); g.fill(); }
+  circle(x, y - 4, 12, p.c); circle(x, y - 4, 6, '#ffd6a5');
+  text(p.n, x, y - 26, 13);
+  if (p.say && now < p.sayUntil) text(p.say, x, y - 44, 14, '#fff6c0');
+  else if (p.e && now < (p.eUntil ?? now + 1)) text(p.e, x, y - 46, 22);
+}
+function draw(t) {
+  const W = cv.width, Hh = cv.height; camx = P.x - W / 2; camy = P.y - Hh / 2;
+  g.fillStyle = '#1e90c8'; g.fillRect(0, 0, W, Hh);
+  g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2;
+  for (let y = -(camy % 60) - 60; y < Hh; y += 60) { g.beginPath(); for (let x = 0; x <= W; x += 40) g.lineTo(x, y + Math.sin((x + camx) / 50 + t / 700 + y) * 6); g.stroke(); }
+  for (const i of isl) {
+    const x = i.wx - camx, y = i.wy - camy;
+    if (x < -200 || y < -200 || x > W + 200 || y > Hh + 200) continue;
+    circle(x, y, SHORE, '#e8d27a'); circle(x, y, LAND - 25, BIO[i.row.biome] || '#4caf50');
+    for (const p of i.palms) { circle(x + p[0], y + p[1], 15, '#2e8b3a'); circle(x + p[0], y + p[1], 5, '#8a5a2b'); }
+    g.fillStyle = '#fff'; g.fillRect(x - 2, y - 40, 4, 40); g.fillStyle = flagCol(i.row.owner_id); g.fillRect(x + 2, y - 40, 26, 16);
+    text(i.row.name, x, y - 52, 15);
+  }
+  if (fs) {                                           // fishing line and bobber
+    const bx = P.x + Math.cos(P.a) * 60 - camx, by = P.y + Math.sin(P.a) * 60 - camy;
+    g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.moveTo(P.x - camx, P.y - camy); g.lineTo(bx, by); g.stroke();
+    circle(bx, by, 6, fs.ph === 'bite' ? '#ff3b3b' : '#fff');
+    if (fs.ph === 'bite') text('!', bx, by - 14, 26, '#ff3b3b');
+  }
+  const now = performance.now();
+  for (const r of Object.values(remotes)) drawPlayer(r, now);
+  drawPlayer({...P, e: now < P.eUntil ? P.e : ''}, now);
+  pops = pops.filter(p => now - p.t < 1500);
+  for (const p of pops) text(p.text, p.x - camx, p.y - camy - (now - p.t) / 25, 16, p.c);
+  const mx = W - 190, my = Hh - 126, k = .055, mp = (x, y) => [mx + (x + 1500) * k, my + (y + 1100) * k];   // minimap
+  g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(mx, my, 176, 112);
+  for (const i of isl) { const [a, b] = mp(i.wx, i.wy); circle(a, b, 5, flagCol(i.row.owner_id)); }
+  for (const r of Object.values(remotes)) { const [a, b] = mp(r.x, r.y); circle(a, b, 2.5, r.c); }
+  const [a, b] = mp(P.x, P.y); circle(a, b, 3.5, '#fff');
 }
 
 /* ================= MAIN LOOP ================= */
@@ -313,38 +248,56 @@ let last = performance.now(), tx = 0;
 function loop(t) {
   requestAnimationFrame(loop);
   const dt = Math.min((t - last) / 1000, .1); last = t;
-  const p = pl.position;
-
-  const fx = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0);
-  const sx = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
-  if (fx || sx) {
-    const dx = -Math.sin(yaw) * fx + Math.cos(yaw) * sx, dz = -Math.cos(yaw) * fx - Math.sin(yaw) * sx;
-    const v = (boatOn ? 16 : 8) * dt / Math.hypot(dx, dz);
-    const ok = (x, z) => Math.abs(x) < 460 && Math.abs(z) < 460 && (H(x, z) >= .4) !== boatOn; // boat = water only, walking = land only
-    const nx = p.x + dx * v, nz = p.z + dz * v;
-    if (ok(nx, nz)) { p.x = nx; p.z = nz; } else if (ok(nx, p.z)) p.x = nx; else if (ok(p.x, nz)) p.z = nz;
-    pl.rotation.y = Math.atan2(dx, dz);
+  const fx = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
+  const fy = (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0);
+  if (fx || fy) {
+    const v = (P.boat ? 300 : 170) * dt / Math.hypot(fx, fy), nx = P.x + fx * v, ny = P.y + fy * v;
+    const ok = (x, y) => Math.abs(x) < 2200 && Math.abs(y) < 1500 && landAt(x, y) !== P.boat;   // boat = water only, walking = land only
+    if (ok(nx, ny)) { P.x = nx; P.y = ny; } else if (ok(nx, P.y)) P.x = nx; else if (ok(P.x, ny)) P.y = ny;
+    P.a = Math.atan2(fy, fx);
   }
-  p.y = boatOn ? .2 + Math.sin(t / 400) * .1 : H(p.x, p.z);
-
-  cam.position.set(p.x + Math.sin(yaw) * Math.cos(pitch) * dist, p.y + 2 + Math.sin(pitch) * dist, p.z + Math.cos(yaw) * Math.cos(pitch) * dist);
-  cam.lookAt(p.x, p.y + 1.5, p.z);
-
-  for (const r of Object.values(remotes)) { r.g.position.lerp(r.t, .15); r.g.rotation.y = r.ry; }
-  if (ch && t - tx > 125) {                           // ~8 position updates per second
+  if (fs) {
+    if (fs.ph === 'wait' && t >= fs.bite) { fs.ph = 'bite'; fs.end = t + 900; }
+    else if (fs.ph === 'bite' && t > fs.end) { fs = null; toast('It got away!'); }
+  }
+  for (const [id, r] of Object.entries(remotes)) {
+    if (t - r.seen > 6000) { delete remotes[id]; continue; }
+    r.x += (r.tx - r.x) * .2; r.y += (r.ty - r.y) * .2;
+  }
+  if (ch && t - tx > ((fx || fy) ? 125 : 1000)) {     // about 8 updates a second while moving, 1 a second when idle
     tx = t;
-    ch.send({type:'broadcast', event:'pos', payload:{id: me.id, n: st.name, x: +p.x.toFixed(1), y: +p.y.toFixed(1), z: +p.z.toFixed(1), r: +pl.rotation.y.toFixed(2), b: boatOn}});
+    ch.send({type:'broadcast', event:'pos', payload:{id: me.id, n: st.name, x: Math.round(P.x), y: Math.round(P.y), a: +P.a.toFixed(2), b: P.boat, e: t < P.eUntil ? P.e : ''}});
   }
-  rd.render(scene, cam);
+  draw(t);
 }
 
-/* ================= START ================= */
+/* ================= INPUT + START ================= */
+const fit = () => { cv.width = innerWidth; cv.height = innerHeight; };
+addEventListener('resize', fit); fit();
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || !started) return;
+  const k = e.key.toLowerCase(); keys[k] = 1;
+  const T = {i:'inv', m:'map', p:'ppl'};
+  if (k === 'f') cast(); if (k === 'b') boat();
+  if (k === 'enter') { e.preventDefault(); $('chat').focus(); }
+  if (EMO[+k - 1]) emote(+k - 1);
+  if (T[k]) { tab = tab === T[k] ? null : T[k]; render(); }
+  if (k === 'escape') { tab = null; render(); }
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = 0);
+$('chat').onkeydown = e => { if (e.key === 'Enter') { sendChat(); $('chat').blur(); } if (e.key === 'Escape') $('chat').blur(); };
+$('fish').onclick = cast; $('boat').onclick = boat;
+
 $('play').onclick = async () => {
   $('play').disabled = true; err();
-  try { isl = await load(); }
-  catch (e) { err('Could not load game data: ' + e.message); $('play').disabled = false; return; }
-  if (!isl.length) { err('No islands found. Check your Supabase tables and policies.'); $('play').disabled = false; return; }
+  let rows;
+  try { rows = await load(); } catch (e) { err('Could not load game data: ' + e.message); $('play').disabled = false; return; }
+  if (!rows.length) { err('No islands found. Check your Supabase tables and policies.'); $('play').disabled = false; return; }
+  isl = rows.map(row => ({row, wx: (row.x - 50) * SCALE, wy: (row.y - 50) * SCALE,
+    palms: [0, 1, 2, 3, 4, 5, 6].map(k => { const a = k * 2.4 + row.x, d = 25 + (k * 37 % 45); return [Math.cos(a) * d, Math.sin(a) * d]; })}));
+  const s = isl.find(i => i.row.id === 'starter-cove') || isl[0];
+  P.x = s.wx; P.y = s.wy + 45; P.n = st.name; P.c = hue(me.id);
   started = true;
-  $('menu').classList.add('hide'); $('hud').classList.remove('hide');
-  hud(); build(); join(); requestAnimationFrame(loop);
+  $('menu').classList.add('hide'); $('hud').classList.remove('hide'); $('chat').classList.remove('hide');
+  hud(); join(); requestAnimationFrame(loop);
 };
