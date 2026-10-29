@@ -311,13 +311,15 @@ $('play').onclick = () => startGame('multiplayer');
 $('solo').onclick = () => startGame('singleplayer');
 
 // Export a portable backup of the player's progress and the island ownership snapshot.
-$('savefile').onclick = () => {
+$('savefile').onclick = async () => {
   try {
+    const rows = await load();
+    if (!rows.length) throw new Error('Could not load island data for this save.');
     const payload = {
       format: 'FIH-CONQUEST-SAVE', version: 1, exportedAt: new Date().toISOString(),
       userId: me.id,
       player: {name: st.name, coins: st.coins, xp: st.xp, level: st.level, inventory: inv},
-      islands: isl.map(i => ({id: i.row.id, name: i.row.name, biome: i.row.biome, x: i.row.x, y: i.row.y, claim_cost: i.row.claim_cost, owner_id: i.row.owner_id}))
+      islands: rows.map(row => ({id: row.id, name: row.name, biome: row.biome, x: row.x, y: row.y, claim_cost: row.claim_cost, owner_id: row.owner_id}))
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
     const url = URL.createObjectURL(blob);
