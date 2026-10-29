@@ -206,11 +206,40 @@ function circle(x, y, r, c) { g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 
 function text(s, x, y, size = 13, c = '#fff') { g.font = `bold ${size}px system-ui,sans-serif`; g.textAlign = 'center'; g.fillStyle = 'rgba(0,0,0,.6)'; g.fillText(s, x + 1, y + 1); g.fillStyle = c; g.fillText(s, x, y); }
 function drawPlayer(p, now) {
   const x = p.x - camx, y = p.y - camy;
-  if (p.boat) { g.fillStyle = '#8a5a2b'; g.beginPath(); g.ellipse(x, y, 28, 16, p.a || 0, 0, 7); g.fill(); }
-  circle(x, y - 4, 12, p.c); circle(x, y - 4, 6, '#ffd6a5');
-  text(p.n, x, y - 26, 13);
-  if (p.say && now < p.sayUntil) text(p.say, x, y - 44, 14, '#fff6c0');
-  else if (p.e && now < (p.eUntil ?? now + 1)) text(p.e, x, y - 46, 22);
+  // Wooden rowboat with rim, planks, seat and a small paddle.
+  if (p.boat) {
+    g.save(); g.translate(x, y); g.rotate(p.a || 0);
+    g.fillStyle = '#5a351e'; g.beginPath(); g.ellipse(0, 7, 31, 17, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#a96d35'; g.beginPath(); g.ellipse(0, 4, 27, 13, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#6b401f'; g.lineWidth = 2;
+    for (let py = -7; py <= 9; py += 7) { g.beginPath(); g.moveTo(-18, py); g.lineTo(18, py); g.stroke(); }
+    g.fillStyle = '#e7c18a'; g.fillRect(-7, -4, 14, 4);
+    g.strokeStyle = '#e9dfb4'; g.lineWidth = 3; g.beginPath(); g.moveTo(17, 13); g.lineTo(32, 21); g.stroke();
+    g.restore();
+  }
+  // Shadow, boots and legs.
+  circle(x, y + 10, 14, 'rgba(0,0,0,.22)');
+  g.strokeStyle = '#26384a'; g.lineWidth = 5; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x - 4, y + 1); g.lineTo(x - 5, y + 10); g.moveTo(x + 4, y + 1); g.lineTo(x + 6, y + 10); g.stroke();
+  g.strokeStyle = '#3a2a20'; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(x - 5, y + 10); g.lineTo(x - 8, y + 11); g.moveTo(x + 6, y + 10); g.lineTo(x + 9, y + 11); g.stroke();
+  // Arms and shirt.
+  g.strokeStyle = '#d99d70'; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(x - 8, y - 8); g.lineTo(x - 13, y); g.moveTo(x + 8, y - 8); g.lineTo(x + 13, y); g.stroke();
+  g.fillStyle = p.c || '#277ac4'; g.beginPath(); g.roundRect(x - 9, y - 13, 18, 18, 5); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.24)'; g.fillRect(x - 5, y - 11, 3, 12);
+  // Neck and face.
+  g.fillStyle = '#c9875b'; g.fillRect(x - 3, y - 16, 6, 5);
+  g.fillStyle = '#f0bd8f'; g.beginPath(); g.ellipse(x, y - 20, 8, 9, 0, 0, Math.PI * 2); g.fill();
+  // Hair cap and fringe.
+  g.fillStyle = '#4a2c1d'; g.beginPath(); g.arc(x, y - 23, 8, Math.PI, Math.PI * 2); g.fill();
+  g.beginPath(); g.moveTo(x - 8, y - 23); g.quadraticCurveTo(x - 2, y - 30, x + 1, y - 22); g.quadraticCurveTo(x + 5, y - 26, x + 8, y - 22); g.fill();
+  // Eyes, brows and smile.
+  g.fillStyle = '#2c201b'; circle(x - 3, y - 20, 1.1, '#2c201b'); circle(x + 3, y - 20, 1.1, '#2c201b');
+  g.strokeStyle = '#8b4b36'; g.lineWidth = 1.2; g.beginPath(); g.arc(x, y - 17, 2.5, .2, Math.PI - .2); g.stroke();
+  text(p.n, x, y - 38, 13);
+  if (p.say && now < p.sayUntil) text(p.say, x, y - 55, 14, '#fff6c0');
+  else if (p.e && now < (p.eUntil ?? now + 1)) text(p.e, x, y - 56, 22);
 }
 function draw(t) {
   const W = cv.width, Hh = cv.height; camx = P.x - W / 2; camy = P.y - Hh / 2;
@@ -243,8 +272,38 @@ function draw(t) {
   const [a, b] = mp(P.x, P.y); circle(a, b, 3.5, '#fff');
 }
 
+/* ================= LOCAL SAVE ================= */
+const saveKey = () => 'fih-conquest-save-v1:' + me.id;
+function saveLocal(showToast = true) {
+  if (!me || !started) return;
+  try {
+    const snapshot = {
+      format: 'FIH-CONQUEST-LOCAL', version: 1, savedAt: new Date().toISOString(),
+      userId: me.id, mode: gameMode,
+      player: {x:P.x, y:P.y, a:P.a, boat:P.boat, coins:st.coins, xp:st.xp, level:st.level, name:st.name, inventory:inv},
+      islands: isl.map(i => ({id:i.row.id, owner_id:i.row.owner_id}))
+    };
+    localStorage.setItem(saveKey(), JSON.stringify(snapshot));
+    if (showToast) toast('Game saved on this browser!');
+  } catch (e) { if (showToast) toast('Save failed: browser storage may be full.'); }
+}
+function restoreLocal() {
+  try {
+    const raw = localStorage.getItem(saveKey()); if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (data.format !== 'FIH-CONQUEST-LOCAL' || data.version !== 1 || data.userId !== me.id || !data.player) return false;
+    const p = data.player;
+    if (Number.isFinite(p.x) && Number.isFinite(p.y)) { P.x=p.x; P.y=p.y; }
+    if (Number.isFinite(p.a)) P.a=p.a;
+    P.boat=!!p.boat;
+    return true;
+  } catch (_) { return false; }
+}
+$('savegame').onclick = () => saveLocal(true);
+addEventListener('beforeunload', () => saveLocal(false));
+
 /* ================= MAIN LOOP ================= */
-let last = performance.now(), tx = 0;
+let last = performance.now(), tx = 0, lastAutoSave = performance.now();
 function loop(t) {
   requestAnimationFrame(loop);
   const dt = Math.min((t - last) / 1000, .1); last = t;
@@ -264,6 +323,7 @@ function loop(t) {
     if (t - r.seen > 6000) { delete remotes[id]; continue; }
     r.x += (r.tx - r.x) * .2; r.y += (r.ty - r.y) * .2;
   }
+  if (started && t - lastAutoSave > 15000) { saveLocal(false); lastAutoSave = t; }
   if (ch && t - tx > ((fx || fy) ? 125 : 1000)) {     // about 8 updates a second while moving, 1 a second when idle
     tx = t;
     ch.send({type:'broadcast', event:'pos', payload:{id: me.id, n: st.name, x: Math.round(P.x), y: Math.round(P.y), a: +P.a.toFixed(2), b: P.boat, e: t < P.eUntil ? P.e : ''}});
@@ -299,12 +359,14 @@ async function startGame(mode) {
     palms: [0, 1, 2, 3, 4, 5, 6].map(k => { const a = k * 2.4 + row.x, d = 25 + (k * 37 % 45); return [Math.cos(a) * d, Math.sin(a) * d]; })}));
   const s = isl.find(i => i.row.id === 'starter-cove') || isl[0];
   P.x = s.wx; P.y = s.wy + 45; P.n = st.name; P.c = hue(me.id);
+  const hadSave = restoreLocal();
   started = true;
   $('menu').classList.add('hide'); $('hud').classList.remove('hide');
   $('chat').classList.toggle('hide', gameMode !== 'multiplayer');
   hud();
   if (gameMode === 'multiplayer') join();
   else { online = {}; remotes = {}; toast('Singleplayer mode: other players are hidden.'); }
+  if (hadSave) toast('Previous position restored. Press Save Game to save anytime.');
   requestAnimationFrame(loop);
 }
 $('play').onclick = () => startGame('multiplayer');
