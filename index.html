@@ -21,6 +21,57 @@ input{width:100%;margin:5px 0;padding:10px;border-radius:8px;border:1px solid va
 #feed{position:fixed;left:10px;bottom:52px;width:min(340px,70vw);font-size:14px;text-shadow:0 1px 3px #000;pointer-events:none}
 #chat{position:fixed;left:10px;bottom:10px;width:min(340px,70vw);margin:0}
 .hide{display:none!important}
+/* FIH Conquest strategy UI refresh */
+:root{--card:rgba(20,27,25,.96);--acc:#d2bd76;--ink:#edf0e6;--line:#46554b;--panel-shadow:0 14px 38px rgba(0,0,0,.32)}
+body{background:#101b1b;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+canvas{background:linear-gradient(180deg,#17485b 0%,#0d3444 100%)}
+.card{background:linear-gradient(145deg,rgba(25,34,30,.97),rgba(14,22,20,.97));border:1px solid #536052;border-radius:8px;box-shadow:var(--panel-shadow);backdrop-filter:blur(10px)}
+button{background:linear-gradient(180deg,#dfcb87,#bba45d);color:#20251b;border:1px solid #f0dfa1;border-radius:5px;padding:9px 13px;font-size:12px;letter-spacing:.035em;text-transform:uppercase;font-weight:800;box-shadow:0 2px 0 rgba(0,0,0,.25);transition:filter .15s,transform .15s}
+button:hover{filter:brightness(1.12);transform:translateY(-1px)}
+button:active{transform:translateY(0)}
+button.alt{background:linear-gradient(180deg,#35443b,#26342d);color:#e2e8dc;border:1px solid #596b5c;box-shadow:none}
+button:focus-visible,input:focus-visible{outline:2px solid #e4cf82;outline-offset:2px}
+input{background:#101b18;color:var(--ink);border:1px solid #4c5d50;border-radius:5px;padding:12px}
+input::placeholder{color:#849286}
+#menu{background:radial-gradient(ellipse at 50% 35%,rgba(74,93,64,.5),transparent 55%),linear-gradient(135deg,#172721,#0b1514 72%);padding:18px}
+#menu:before{content:"FIH STRATEGIC COMMAND / ISLAND THEATER";position:fixed;top:24px;left:28px;font-size:10px;letter-spacing:.22em;color:#a7b49d;font-weight:800}
+#menu:after{content:"TACTICAL SANDBOX • BUILD YOUR DOMAIN";position:fixed;bottom:22px;left:0;right:0;text-align:center;font-size:10px;letter-spacing:.18em;color:#778778}
+#menu .card{width:min(450px,94vw);padding:28px;text-align:left;border-color:#65715a;position:relative}
+#menu h1{font-size:clamp(26px,5vw,36px);letter-spacing:.11em;line-height:1.1;color:#e0ca7c;text-shadow:0 2px 20px rgba(210,189,118,.12)}
+#menu h1:after{content:"COMMAND • EXPAND • CONQUER";display:block;margin-top:10px;font-size:9px;letter-spacing:.24em;color:#91a18d}
+#menu .card>p:first-of-type{font-size:13px;color:#c1cbbb;line-height:1.6;margin:17px 0 22px}
+#auth{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+#auth input{grid-column:1/-1;margin:0}
+#auth button{min-height:42px}
+.menu-actions{grid-template-columns:1fr 1fr;gap:9px;margin:15px 0}
+.menu-actions button{min-height:46px}
+.menu-note{font-size:11px;color:#9ca99a;line-height:1.65;border-top:1px solid #3d4a3f;padding-top:12px}
+#ready #who{padding:10px 12px;background:#111b16;border-left:3px solid var(--acc);color:#e4d59a;font-size:13px}
+#err{color:#ffaaa0;margin:8px 0 0}
+#hud{top:12px;left:12px;right:12px;gap:7px;align-items:stretch}
+#hud .card{box-shadow:0 5px 20px rgba(0,0,0,.3)}
+#stats{min-height:42px;display:flex;align-items:center;gap:12px;padding:8px 13px;border-color:#6b7257;font-size:12px;font-weight:750}
+#hud button{min-height:42px}
+#panel{top:72px;left:auto;right:14px;transform:none;width:min(380px,calc(100vw - 28px));max-height:calc(100vh - 100px);padding:18px;border-color:#66705a}
+#panel h2,#panel h3{color:#dfca83;letter-spacing:.07em;text-transform:uppercase}
+#panel button{margin:3px 2px}
+.row{border-bottom:1px solid #35463b;padding:10px 0;font-size:13px}
+#toast{bottom:76px;border:1px solid #67735c;border-radius:6px;background:rgba(16,24,19,.96);box-shadow:var(--panel-shadow);font-size:13px}
+#feed{left:14px;bottom:54px;width:min(320px,65vw);font-size:12px;color:#e2e8d9}
+#chat{left:14px;bottom:12px;width:min(320px,65vw);background:rgba(15,23,19,.95);border-color:#68735c}
+progress{accent-color:#d2bd76}
+@media(max-width:760px){
+ #menu:before{top:12px;left:14px;font-size:8px}
+ #menu:after{bottom:10px;font-size:8px}
+ #menu .card{padding:21px 17px}
+ #hud{top:7px;left:7px;right:7px;gap:5px}
+ #stats{width:100%;min-height:36px;justify-content:space-between}
+ #hud button{flex:1 1 calc(33.333% - 5px);min-width:0;padding:8px 5px;font-size:10px;min-height:36px}
+ #panel{top:145px;right:7px;width:min(360px,calc(100vw - 14px));max-height:calc(100vh - 160px)}
+ #feed{left:8px;bottom:48px;width:55vw;font-size:11px}
+ #chat{left:8px;bottom:7px;width:55vw}
+}
+@media(max-height:600px){#menu .card{padding:16px;max-height:84vh}#menu:before,#menu:after{display:none}}
 </style>
 <script type="importmap">{"imports":{"@supabase/supabase-js":"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm"}}</script>
 </head><body>
