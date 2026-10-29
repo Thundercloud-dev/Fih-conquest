@@ -9,6 +9,17 @@ const FCOL = {Sardine:'#9fb7c9', Mackerel:'#5fa8d3', Clownfish:'#ff8c42', Tuna:'
 const RARE = ['Tuna', 'Golden Koi'];
 const EMO = ['👋', '🎣', '🎉', '❓'];
 const BIO = {tropical:'#4caf50', reef:'#2bb6a8', mist:'#9fb7c9', beach:'#e8d27a', rocky:'#8d8d8d', remote:'#8a6bbd'};
+const FISH_CATALOG = ["Sardine","Anchovy","Herring","Sprat","Mackerel","Atlantic Mackerel","Blue Runner","Horse Mackerel","Smelt","Capelin","Minnow","Shiner","Gudgeon","Whitebait","Pilchard","Needlefish","Halfbeak","Flying Fish","Silverside","Butterfish","Clownfish","Blue Tang","Yellow Tang","Surgeonfish","Parrotfish","Damselfish","Chromis","Wrasse","Cleaner Wrasse","Butterflyfish","Angelfish","Bannerfish","Triggerfish","Pufferfish","Porcupinefish","Boxfish","Filefish","Rabbitfish","Moorish Idol","Cardinalfish","Royal Gramma","Firefish","Gobies","Blenny","Hawkfish","Dottyback","Anthias","Fusilier","Rainbowfish","Mandarinfish","Lionfish","Moray Eel","Barracuda","Grouper","Snapper","Red Snapper","Sea Bass","Tuna","Yellowfin Tuna","Albacore","Swordfish","Marlin","Sailfish","Wahoo","Mahi-Mahi","Amberjack","Trevally","Bonito","Kingfish","Cobia","Tarpon","Bonefish","Permit","Flounder","Halibut","Sole","Stingray","Eagle Ray","Reef Shark","Nurse Shark","Golden Koi","Moon Koi","Pearl Betta","Crystal Guppy","Blue Dragonfish","Ghost Lanternfish","Abyssal Anglerfish","Glasswing Butterflyfish","Prism Seahorse","Royal Lionfish","Starry Puffer","Sunset Discus","Aurora Trout","Frostfin Salmon","Ember Arowana","Crown Triggerfish","Phantom Manta","Opal Octopusfish","Sapphire Marlin","Leviathan Grouper"];
+const FISH_RARITY = Object.fromEntries(FISH_CATALOG.map((name, i) => [name, i < 20 ? 'Common' : i < 50 ? 'Uncommon' : i < 80 ? 'Rare' : 'Legendary']));
+const BUILDINGS = {
+  cottage: {name:'Cottage', max:2, costs:[8,16], desc:'Adds homes for island residents.'},
+  worker: {name:'Worker Station', max:3, costs:[12,24,40], desc:'Improves island work output.'},
+  farm: {name:'Farm Station', max:3, costs:[10,20,35], desc:'A worker station focused on food.'},
+  lumber: {name:'Lumber Station', max:3, costs:[10,22,38], desc:'A worker station focused on timber.'},
+  mine: {name:'Mine Station', max:3, costs:[14,28,45], desc:'A worker station focused on ore.'},
+  aquarium: {name:'Aquarium', max:3, costs:[18,32,50], desc:'Displays your discovered fish collection.'},
+  dock: {name:'Harbor Dock', max:3, costs:[12,25,42], desc:'Expands the island harbor.'}
+};
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = id => document.getElementById(id), cv = $('c'), g = cv.getContext('2d');
 
@@ -17,6 +28,21 @@ let me = null, st = {coins:0, xp:0, level:1, name:'Sailor'}, inv = {}, isl = [];
 let ch = null, started = false, gameMode = 'multiplayer', online = {}, remotes = {}, tab = null;
 let P = {x:0, y:0, a:0, boat:false, e:'', eUntil:0, say:'', sayUntil:0, n:'', c:''};
 let keys = {}, fs = null, busy = false, lastFish = 0, lastChat = 0, pops = [], camx = 0, camy = 0;
+let development = {materials:25, buildings:{}, discovered:[]};
+const devKey = () => 'fih-conquest-development-v1:' + me.id;
+function saveDevelopment() { if (!me) return; try { localStorage.setItem(devKey(), JSON.stringify(development)); } catch (_) {} }
+function loadDevelopment() { try { const d = JSON.parse(localStorage.getItem(devKey()) || 'null'); if (d && typeof d === 'object') development = {materials:Math.max(0, Number(d.materials)||0), buildings:d.buildings && typeof d.buildings==='object' ? d.buildings : {}, discovered:Array.isArray(d.discovered) ? d.discovered.filter(n => FISH_CATALOG.includes(n)) : []}; } catch (_) {} }
+const islandBuilds = id => development.buildings[id] || (development.buildings[id] = {});
+function discoverFish() {
+  const undiscovered = FISH_CATALOG.filter(n => !development.discovered.includes(n));
+  if (!undiscovered.length || Math.random() > 0.34) return null;
+  const roll = Math.random();
+  const wanted = roll > .97 ? 'Legendary' : roll > .78 ? 'Rare' : roll > .38 ? 'Uncommon' : 'Common';
+  const pool = undiscovered.filter(n => FISH_RARITY[n] === wanted);
+  const pick = (pool.length ? pool : undiscovered)[Math.floor(Math.random() * (pool.length ? pool : undiscovered).length)];
+  development.discovered.push(pick); development.materials += FISH_RARITY[pick] === 'Legendary' ? 5 : FISH_RARITY[pick] === 'Rare' ? 3 : 1;
+  saveDevelopment(); feed('Aquarium discovery: ' + pick + ' (' + FISH_RARITY[pick] + ')!'); return pick;
+}
 
 /* ================= HELPERS ================= */
 const toast = m => { const t = $('toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(t.h); t.h = setTimeout(() => t.style.opacity = 0, 2600); };
@@ -101,6 +127,34 @@ function render() {
       return `<div class="row"><span><b>${i.row.name}</b> <small>${i.row.biome}, ${cost ? cost + ' coins' : 'free'}</small><br><small>${o ? 'Owner: ' + nm(o) : 'Unclaimed'}</small></span>${act}</div>`;
     }).join('');
   }
+  if (tab === 'build') {
+    const island = here();
+    const owned = isl.filter(i => i.row.owner_id === me.id);
+    h = '<h3>Island Development</h3><p><b>Materials:</b> ' + development.materials + '</p><p><small>Materials are earned from discovering fish. Buildings are saved in this browser for your account.</small></p>';
+    if (!owned.length) h += '<p>Claim an island before building on it.</p>';
+    else {
+      if (!island || island.row.owner_id !== me.id) h += '<p><small>Travel onto one of your islands to construct or upgrade buildings.</small></p>';
+      h += owned.map(i => {
+        const levels = islandBuilds(i.row.id);
+        const selected = island === i;
+        return '<div class="row"><span><b>' + i.row.name + (selected ? ' · HERE' : '') + '</b><br><small>' + Object.entries(BUILDINGS).map(([k,b]) => b.name + ' Lv ' + (levels[k]||0)).join(' · ') + '</small></span>' + (selected ? '<span>Selected</span>' : '<small>Travel here</small>') + '</div>';
+      }).join('');
+      if (island && island.row.owner_id === me.id) {
+        const levels = islandBuilds(island.row.id);
+        h += '<h3>Construct on ' + island.row.name + '</h3>' + Object.entries(BUILDINGS).map(([key,b]) => {
+          const level = levels[key] || 0, cost = b.costs[level];
+          return '<div class="row"><span><b>' + b.name + '</b><br><small>Lv ' + level + '/' + b.max + ' · ' + b.desc + '</small></span><button data-build="' + key + '" ' + (level >= b.max || development.materials < cost ? 'disabled' : '') + '>' + (level >= b.max ? 'MAX' : (level ? 'Upgrade ' : 'Build ') + cost + ' mat.') + '</button></div>';
+        }).join('');
+      }
+    }
+  }
+  if (tab === 'aquarium') {
+    const owned = isl.filter(i => i.row.owner_id === me.id);
+    const aqLevel = owned.reduce((n,i) => n + (islandBuilds(i.row.id).aquarium || 0), 0);
+    const discovered = new Set(development.discovered);
+    h = '<h3>Aquarium Collection</h3><p><b>Discovered:</b> ' + discovered.size + ' / ' + FISH_CATALOG.length + ' species</p><p><small>Catch fish to discover new species. Rare and legendary discoveries give extra building materials.</small></p><div class="row"><span>Common</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Common' && discovered.has(n)).length + ' / 20</b></div><div class="row"><span>Uncommon</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Uncommon' && discovered.has(n)).length + ' / 30</b></div><div class="row"><span>Rare</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Rare' && discovered.has(n)).length + ' / 30</b></div><div class="row"><span>Legendary</span><b>' + FISH_CATALOG.filter(n => FISH_RARITY[n] === 'Legendary' && discovered.has(n)).length + ' / 20</b></div><p><small>Aquarium levels built on your islands: ' + aqLevel + '</small></p>';
+    h += FISH_CATALOG.map((name,i) => '<div class="row"><span>' + (discovered.has(name) ? '🐟 ' + name : '🔒 Unknown species #' + (i+1)) + '</span><small>' + (discovered.has(name) ? FISH_RARITY[name] : 'Not discovered') + '</small></div>').join('');
+  }
   if (tab === 'fleet') {
     const owned = isl.filter(i => i.row.owner_id === me.id);
     h = '<h3>Naval Command</h3><p><small>Every island you control receives a defensive destroyer garrison.</small></p>'
@@ -128,6 +182,14 @@ if ($('panel')) $('panel').onclick = async e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'cl') { tab = null; return render(); }
   if (b.id === 'lo') return sb.auth.signOut();
+  if (b.dataset.build) {
+    const island = here();
+    if (!island || island.row.owner_id !== me.id) return toast('Stand on an island you own to build.');
+    const key = b.dataset.build, spec = BUILDINGS[key], levels = islandBuilds(island.row.id), level = levels[key] || 0, cost = spec?.costs[level];
+    if (!spec || level >= spec.max || development.materials < cost) return toast('Not enough materials or building is max level.');
+    development.materials -= cost; levels[key] = level + 1; saveDevelopment();
+    feed(spec.name + ' upgraded to level ' + (level + 1) + ' on ' + island.row.name + '.'); toast(spec.name + ' upgraded to Lv ' + (level + 1));
+  }
   if (b.dataset.s) { const [f, q] = b.dataset.s.split('|'); const n = await sell(f, +q); if (n) toast(`Sold for ${n} coins`); }
   if (b.dataset.all) { let n = 0; for (const f of Object.keys(PRICE)) if (inv[f] > 0) n += await sell(f, inv[f]); toast(`Sold everything for ${n} coins`); }
   if (b.dataset.c) {
@@ -168,6 +230,7 @@ async function reel() {
   busy = false; lastFish = performance.now();
   if (error) return toast(error.message);
   inv[data.fish] = data.quantity; st.xp = data.xp; st.level = data.level;
+  development.materials += 1; const discovery = discoverFish(); saveDevelopment();
   pops.push({x: P.x, y: P.y - 30, t: performance.now(), text: `+1 ${data.fish}`, c: FCOL[data.fish] || '#fff'});
   toast(`You caught a ${data.fish}! +5 XP`);
   if (RARE.includes(data.fish)) { feed(`You caught a ${data.fish}!`); ch?.send({type:'broadcast', event:'catch', payload:{id: me.id, n: st.name, f: data.fish}}); }
@@ -342,6 +405,34 @@ function draw(t) {
     if (x < -200 || y < -200 || x > W + 200 || y > Hh + 200) continue;
     circle(x, y, SHORE, '#e8d27a'); circle(x, y, LAND - 25, BIO[i.row.biome] || '#4caf50');
     drawIslandSettlement(x, y, i.row.owner_id);
+    const levels = islandBuilds(i.row.id);
+    if (levels.worker || levels.farm || levels.lumber || levels.mine) {
+      const stations = [['worker',-48,48,'#d6c08b'],['farm',-72,20,'#7fbf68'],['lumber',-63,69,'#a96d35'],['mine',-40,87,'#8e9698']];
+      for (const [key,bx,by,col] of stations) if (levels[key]) {
+        g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(x+bx-2,y+by+3,21,15);
+        g.fillStyle = col; g.fillRect(x+bx,y+by,17,12);
+        g.fillStyle = '#493b2c'; g.beginPath(); g.moveTo(x+bx-2,y+by+2); g.lineTo(x+bx+8,y+by-5); g.lineTo(x+bx+19,y+by+2); g.closePath(); g.fill();
+        text('Lv'+levels[key],x+bx+8,y+by+23,8,'#fff6ce');
+      }
+    }
+    if (levels.cottage) {
+      for (let n=0;n<levels.cottage;n++) {
+        const bx = 34 + n*19, by = -16 + n*10;
+        g.fillStyle = '#d8c3a0'; g.fillRect(x+bx,y+by,13,10);
+        g.fillStyle = '#6b4530'; g.beginPath(); g.moveTo(x+bx-2,y+by+2); g.lineTo(x+bx+6,y+by-4); g.lineTo(x+bx+15,y+by+2); g.closePath(); g.fill();
+      }
+    }
+    if (levels.aquarium) {
+      g.fillStyle = '#74d5e8'; g.fillRect(x+47,y+37,25,17);
+      g.strokeStyle = '#e0f5f5'; g.lineWidth = 2; g.strokeRect(x+47,y+37,25,17);
+      g.fillStyle = '#1e6b8a'; g.fillRect(x+50,y+40,19,11);
+      g.fillStyle = '#ffcf5b'; g.beginPath(); g.ellipse(x+57,y+45,4,2,0,0,Math.PI*2); g.fill();
+      text('A'+levels.aquarium,x+59,y+64,9,'#fff');
+    }
+    if (levels.dock) {
+      g.fillStyle = '#9c6a3a'; g.fillRect(x+105,y+34,12+levels.dock*5,9);
+      text('D'+levels.dock,x+116,y+54,9,'#fff');
+    }
     for (const p of i.palms) { circle(x + p[0], y + p[1], 19, '#2e8b3a'); circle(x + p[0], y + p[1], 6, '#8a5a2b'); }
     if (i.row.owner_id) {
       const ownerColor = i.row.owner_id === me.id ? '#d8c46a' : '#a95a50';
@@ -396,7 +487,7 @@ function restoreLocal() {
   } catch (_) { return false; }
 }
 if ($('savegame')) $('savegame').onclick = () => saveLocal(true);
-addEventListener('beforeunload', () => saveLocal(false));
+addEventListener('beforeunload', () => { saveLocal(false); saveDevelopment(); });
 
 /* ================= MAIN LOOP ================= */
 let last = performance.now(), tx = 0, lastAutoSave = performance.now();
@@ -419,7 +510,7 @@ function loop(t) {
     if (t - r.seen > 6000) { delete remotes[id]; continue; }
     r.x += (r.tx - r.x) * .2; r.y += (r.ty - r.y) * .2;
   }
-  if (started && t - lastAutoSave > 15000) { saveLocal(false); lastAutoSave = t; }
+  if (started && t - lastAutoSave > 15000) { saveLocal(false); saveDevelopment(); lastAutoSave = t; }
   if (ch && t - tx > ((fx || fy) ? 125 : 1000)) {     // about 8 updates a second while moving, 1 a second when idle
     tx = t;
     ch.send({type:'broadcast', event:'pos', payload:{id: me.id, n: st.name, x: Math.round(P.x), y: Math.round(P.y), a: +P.a.toFixed(2), b: P.boat, e: t < P.eUntil ? P.e : ''}});
@@ -433,7 +524,7 @@ addEventListener('resize', fit); fit();
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || !started) return;
   const k = e.key.toLowerCase(); keys[k] = 1;
-  const T = {i:'inv', m:'map', p:'ppl', n:'fleet'};
+  const T = {i:'inv', m:'map', p:'ppl', n:'fleet', g:'build', a:'aquarium'};
   if (k === 'f') cast(); if (k === 'b') boat();
   if (k === 'enter') { e.preventDefault(); $('chat').focus(); }
   if (EMO[+k - 1]) emote(+k - 1);
@@ -455,6 +546,7 @@ async function startGame(mode) {
     palms: [0, 1, 2, 3, 4, 5, 6].map(k => { const a = k * 2.4 + row.x, d = 25 + (k * 37 % 45); return [Math.cos(a) * d, Math.sin(a) * d]; })}));
   const s = isl.find(i => i.row.id === 'starter-cove') || isl[0];
   P.x = s.wx; P.y = s.wy + 45; P.n = st.name; P.c = hue(me.id);
+  loadDevelopment();
   const hadSave = restoreLocal();
   started = true;
   $('menu').classList.add('hide'); $('hud').classList.remove('hide');
