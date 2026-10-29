@@ -3,7 +3,7 @@ import {createClient} from '@supabase/supabase-js';
 /* ================= SETTINGS ================= */
 const SUPABASE_URL = 'https://ucxustzrevjlktcfsmfy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_DlflO5eJAotVhCv-q16Ceg_-fWZQ8Kr';
-const SCALE = 22, LAND = 105, SHORE = 122;        // map units -> pixels, island sizes
+const SCALE = 28, LAND = 155, SHORE = 178;        // map units -> pixels, island sizes
 const PRICE = {Sardine:4, Mackerel:7, Clownfish:10, Tuna:18, 'Golden Koi':35}; // display only, the database sets real prices
 const FCOL = {Sardine:'#9fb7c9', Mackerel:'#5fa8d3', Clownfish:'#ff8c42', Tuna:'#e74c3c', 'Golden Koi':'#ffd700'};
 const RARE = ['Tuna', 'Golden Koi'];
@@ -101,13 +101,22 @@ function render() {
       return `<div class="row"><span><b>${i.row.name}</b> <small>${i.row.biome}, ${cost ? cost + ' coins' : 'free'}</small><br><small>${o ? 'Owner: ' + nm(o) : 'Unclaimed'}</small></span>${act}</div>`;
     }).join('');
   }
+  if (tab === 'fleet') {
+    const owned = isl.filter(i => i.row.owner_id === me.id);
+    h = '<h3>Naval Command</h3><p><small>Every island you control receives a defensive destroyer garrison.</small></p>'
+      + (owned.length ? owned.map((i, n) => {
+          const fleet = ['Destroyer escort', ...(owned.length >= 2 ? ['Patrol boat'] : []), ...(owned.length >= 3 ? ['Battleship support'] : [])];
+          return '<div class="row"><span><b>' + i.row.name + '</b><br><small>' + fleet.join(' · ') + '</small></span><span>DEFENDED</span></div>';
+        }).join('') : '<p>No islands under your flag yet. Claim territory to establish your navy.</p>')
+      + '<p><small>Destroyers patrol the waters around your islands. Larger empires field more support vessels.</small></p>';
+  }
   if (tab === 'ppl') {
     const cnt = {}; isl.forEach(i => i.row.owner_id && (cnt[i.row.owner_id] = (cnt[i.row.owner_id] || 0) + 1));
     const board = Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(([id, n], k) => `<div class="row"><span>#${k + 1} ${nm(id)}</span><span>${n} island${n > 1 ? 's' : ''}</span></div>`).join('');
     h = '<h3>Online now</h3>' + Object.values(online).map(o => `<div class="row"><span>${o.name}</span><span>Lv ${o.lv}</span></div>`).join('')
       + '<h3>Island leaderboard</h3>' + (board || '<small>No islands claimed yet.</small>');
   }
-  if (tab === 'set') h = '<h3>Settings</h3><p><small>WASD or arrows move. F cast and reel. B board or leave boat. I shop, M conquest, P players. Enter chat. 1-4 emotes.</small></p><button id="lo">Sign out</button>';
+  if (tab === 'set') h = '<h3>Field Manual</h3><p><small>WASD / arrows: move. B: board boat. M: territory. N: naval command. P: players. I: supplies. Enter: chat.</small></p><button id="lo">Sign out</button>';
   p.innerHTML = h + '<p><button class="alt" id="cl">Close</button></p>';
 }
 async function sell(f, q) {
@@ -240,6 +249,18 @@ function drawPlayer(p, now) {
   text(p.n, x, y - 38, 13);
   if (p.say && now < p.sayUntil) text(p.say, x, y - 55, 14, '#fff6c0');
   else if (p.e && now < (p.eUntil ?? now + 1)) text(p.e, x, y - 56, 22);
+  g.restore();
+}
+function drawWarship(x, y, type, color, angle) {
+  g.save(); g.translate(x, y); g.rotate(angle || 0);
+  const length = type === 'battleship' ? 36 : type === 'destroyer' ? 29 : 21;
+  g.fillStyle = '#1e2529'; g.beginPath();
+  g.moveTo(-length, -5); g.lineTo(length - 5, -5); g.lineTo(length, 0); g.lineTo(length - 7, 6); g.lineTo(-length + 4, 6); g.closePath(); g.fill();
+  g.fillStyle = color; g.fillRect(-length + 5, -3, length * 1.35, 5);
+  g.fillStyle = '#c6c7bb'; g.fillRect(-5, -8, 13, 7);
+  g.fillStyle = '#4a5458'; g.fillRect(-1, -13, 3, 5);
+  g.strokeStyle = '#d6d4c7'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(5, -6); g.lineTo(13, -11); g.stroke();
+  g.restore();
 }
 function draw(t) {
   const W = cv.width, Hh = cv.height; camx = P.x - W / 2; camy = P.y - Hh / 2;
@@ -250,7 +271,14 @@ function draw(t) {
     const x = i.wx - camx, y = i.wy - camy;
     if (x < -200 || y < -200 || x > W + 200 || y > Hh + 200) continue;
     circle(x, y, SHORE, '#e8d27a'); circle(x, y, LAND - 25, BIO[i.row.biome] || '#4caf50');
-    for (const p of i.palms) { circle(x + p[0], y + p[1], 15, '#2e8b3a'); circle(x + p[0], y + p[1], 5, '#8a5a2b'); }
+    for (const p of i.palms) { circle(x + p[0], y + p[1], 19, '#2e8b3a'); circle(x + p[0], y + p[1], 6, '#8a5a2b'); }
+    if (i.row.owner_id) {
+      const ownerColor = i.row.owner_id === me.id ? '#d8c46a' : '#a95a50';
+      drawWarship(x + 95, y + 65, 'destroyer', ownerColor, -0.35);
+      const ownedCount = isl.filter(q => q.row.owner_id === i.row.owner_id).length;
+      if (ownedCount >= 2) drawWarship(x - 95, y + 78, 'patrol', ownerColor, 0.3);
+      if (ownedCount >= 3) drawWarship(x + 5, y + 115, 'battleship', ownerColor, -0.15);
+    }
     g.fillStyle = '#fff'; g.fillRect(x - 2, y - 40, 4, 40); g.fillStyle = flagCol(i.row.owner_id); g.fillRect(x + 2, y - 40, 26, 16);
     text(i.row.name, x, y - 52, 15);
   }
@@ -337,7 +365,7 @@ addEventListener('resize', fit); fit();
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || !started) return;
   const k = e.key.toLowerCase(); keys[k] = 1;
-  const T = {i:'inv', m:'map', p:'ppl'};
+  const T = {i:'inv', m:'map', p:'ppl', n:'fleet'};
   if (k === 'f') cast(); if (k === 'b') boat();
   if (k === 'enter') { e.preventDefault(); $('chat').focus(); }
   if (EMO[+k - 1]) emote(+k - 1);
