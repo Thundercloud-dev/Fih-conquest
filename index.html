@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FIH Conquest</title>
+<title>FIH Conquest — Island Warfare</title>
 <style>
-:root{--card:rgba(8,38,52,.92);--acc:#ffc94a;--ink:#eaf6ff;--line:#2d6a8a}
+:root{--card:rgba(27,31,29,.96);--acc:#c6b46b;--ink:#e8e6d8;--line:#565d52}
 *{box-sizing:border-box}body{margin:0;overflow:hidden;font-family:system-ui,sans-serif;color:var(--ink);background:#1e90c8}
 canvas{display:block}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
-button{background:var(--acc);color:#2a1d00;border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
+.card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:16px}
+button{background:var(--acc);color:#2a1d00;border:0;border-radius:3px;padding:8px 14px;font-weight:700;cursor:pointer}
 button.alt{background:var(--line);color:var(--ink)}button:disabled{opacity:.45;cursor:default}
 input{width:100%;margin:5px 0;padding:10px;border-radius:8px;border:1px solid var(--line);background:#06232f;color:var(--ink)}
-#menu{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(#0a2f44,#1b7a99 70%,#e8d27a)}
+#menu{position:fixed;inset:0;display:grid;place-items:center;background:#243b35}
 #menu .card{width:min(420px,94vw);text-align:center;max-height:92vh;overflow:auto}h1{margin:0 0 4px;color:var(--acc)}
 .menu-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.menu-actions button{min-height:42px}.menu-note{font-size:12px;color:#c4e4f3;line-height:1.4}
 #err{color:#ff9a9a;min-height:1.2em;font-size:14px}
@@ -25,7 +25,7 @@ input{width:100%;margin:5px 0;padding:10px;border-radius:8px;border:1px solid va
 <script type="importmap">{"imports":{"@supabase/supabase-js":"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm"}}</script>
 </head><body>
 <canvas id="c"></canvas>
-<div id="menu"><div class="card"><h1>FIH Conquest</h1><p>Fish, trade and claim the islands.</p>
+<div id="menu"><div class="card"><h1>FIH CONQUEST</h1><p>Claim islands. Build your fleet. Hold the coast.</p>
   <div id="auth">
     <input id="em" type="email" placeholder="Email">
     <input id="pw" type="password" placeholder="Password (6+ characters)">
@@ -36,9 +36,9 @@ input{width:100%;margin:5px 0;padding:10px;border-radius:8px;border:1px solid va
   <p id="err"></p>
 </div></div>
 <div id="hud" class="hide"><div class="card" id="stats"></div>
-  <button data-t="inv">Inventory &amp; Shop</button><button data-t="map">Conquest</button>
-  <button data-t="ppl">Players</button><button data-t="set" class="alt">Settings</button>
-  <button id="fish">Fish (F)</button><button id="boat" class="alt">Boat (B)</button><button id="savegame">Save Game</button>
+  <button data-t="map">Territory</button><button data-t="fleet">Naval Command</button>
+  <button data-t="ppl">Players</button><button data-t="inv" class="alt">Supplies</button><button data-t="set" class="alt">Field Manual</button>
+  <button id="boat" class="alt">Boat (B)</button><button id="savegame">Save Game</button>
 </div>
 <div id="panel" class="card hide"></div><div id="toast"></div>
 <div id="feed"></div><input id="chat" class="hide" maxlength="80" placeholder="Press Enter to chat">
