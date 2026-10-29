@@ -12,6 +12,7 @@ const BIO = {tropical:'#4caf50', reef:'#2bb6a8', mist:'#9fb7c9', beach:'#e8d27a'
 const FISH_CATALOG = ["Sardine","Anchovy","Herring","Sprat","Mackerel","Atlantic Mackerel","Blue Runner","Horse Mackerel","Smelt","Capelin","Minnow","Shiner","Gudgeon","Whitebait","Pilchard","Needlefish","Halfbeak","Flying Fish","Silverside","Butterfish","Clownfish","Blue Tang","Yellow Tang","Surgeonfish","Parrotfish","Damselfish","Chromis","Wrasse","Cleaner Wrasse","Butterflyfish","Angelfish","Bannerfish","Triggerfish","Pufferfish","Porcupinefish","Boxfish","Filefish","Rabbitfish","Moorish Idol","Cardinalfish","Royal Gramma","Firefish","Gobies","Blenny","Hawkfish","Dottyback","Anthias","Fusilier","Rainbowfish","Mandarinfish","Lionfish","Moray Eel","Barracuda","Grouper","Snapper","Red Snapper","Sea Bass","Tuna","Yellowfin Tuna","Albacore","Swordfish","Marlin","Sailfish","Wahoo","Mahi-Mahi","Amberjack","Trevally","Bonito","Kingfish","Cobia","Tarpon","Bonefish","Permit","Flounder","Halibut","Sole","Stingray","Eagle Ray","Reef Shark","Nurse Shark","Golden Koi","Moon Koi","Pearl Betta","Crystal Guppy","Blue Dragonfish","Ghost Lanternfish","Abyssal Anglerfish","Glasswing Butterflyfish","Prism Seahorse","Royal Lionfish","Starry Puffer","Sunset Discus","Aurora Trout","Frostfin Salmon","Ember Arowana","Crown Triggerfish","Phantom Manta","Opal Octopusfish","Sapphire Marlin","Leviathan Grouper"];
 const FISH_RARITY = Object.fromEntries(FISH_CATALOG.map((name, i) => [name, i < 20 ? 'Common' : i < 50 ? 'Uncommon' : i < 80 ? 'Rare' : 'Legendary']));
 const BUILDINGS = {
+  mainhall: {name:'Main Hall', max:3, costs:[0,25,45], desc:'Upgrades the island settlement headquarters.'},
   cottage: {name:'Cottage', max:2, costs:[8,16], desc:'Adds homes for island residents.'},
   worker: {name:'Worker Station', max:3, costs:[12,24,40], desc:'Improves island work output.'},
   farm: {name:'Farm Station', max:3, costs:[10,20,35], desc:'A worker station focused on food.'},
@@ -32,7 +33,7 @@ let development = {materials:25, buildings:{}, discovered:[]};
 const devKey = () => 'fih-conquest-development-v1:' + me.id;
 function saveDevelopment() { if (!me) return; try { localStorage.setItem(devKey(), JSON.stringify(development)); } catch (_) {} }
 function loadDevelopment() { try { const d = JSON.parse(localStorage.getItem(devKey()) || 'null'); if (d && typeof d === 'object') development = {materials:Math.max(0, Number(d.materials)||0), buildings:d.buildings && typeof d.buildings==='object' ? d.buildings : {}, discovered:Array.isArray(d.discovered) ? d.discovered.filter(n => FISH_CATALOG.includes(n)) : []}; } catch (_) {} }
-const islandBuilds = id => development.buildings[id] || (development.buildings[id] = {});
+const islandBuilds = id => development.buildings[id] || (development.buildings[id] = {mainhall:1});
 function discoverFish() {
   const undiscovered = FISH_CATALOG.filter(n => !development.discovered.includes(n));
   if (!undiscovered.length || Math.random() > 0.34) return null;
@@ -130,7 +131,7 @@ function render() {
   if (tab === 'build') {
     const island = here();
     const owned = isl.filter(i => i.row.owner_id === me.id);
-    h = '<h3>Island Development</h3><p><b>Materials:</b> ' + development.materials + '</p><p><small>Materials are earned from discovering fish. Buildings are saved in this browser for your account.</small></p>';
+    h = '<h3>Island Development</h3><p><b>Materials:</b> ' + development.materials + '</p><p><small>Materials are earned by fishing and discovering new species. Buildings are saved in this browser for your account.</small></p>';
     if (!owned.length) h += '<p>Claim an island before building on it.</p>';
     else {
       if (!island || island.row.owner_id !== me.id) h += '<p><small>Travel onto one of your islands to construct or upgrade buildings.</small></p>';
@@ -359,7 +360,7 @@ function drawFishingRod(x, y, angle, casting, now) {
   }
 }
 // Small settlement and harbor details make claimed islands read like territories.
-function drawIslandSettlement(x, y, ownerId) {
+function drawIslandSettlement(x, y, ownerId, hallLevel = 1) {
   const owned = !!ownerId;
   const flag = flagCol(ownerId);
   // A low-contrast territorial boundary follows the island's interior coast.
@@ -404,8 +405,9 @@ function draw(t) {
     const x = i.wx - camx, y = i.wy - camy;
     if (x < -200 || y < -200 || x > W + 200 || y > Hh + 200) continue;
     circle(x, y, SHORE, '#e8d27a'); circle(x, y, LAND - 25, BIO[i.row.biome] || '#4caf50');
-    drawIslandSettlement(x, y, i.row.owner_id);
+    drawIslandSettlement(x, y, i.row.owner_id, islandBuilds(i.row.id).mainhall || 1);
     const levels = islandBuilds(i.row.id);
+    text('H' + (levels.mainhall || 1), x - 12, y + 43, 9, '#fff4bf');
     if (levels.worker || levels.farm || levels.lumber || levels.mine) {
       const stations = [['worker',-48,48,'#d6c08b'],['farm',-72,20,'#7fbf68'],['lumber',-63,69,'#a96d35'],['mine',-40,87,'#8e9698']];
       for (const [key,bx,by,col] of stations) if (levels[key]) {
