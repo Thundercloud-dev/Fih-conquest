@@ -239,7 +239,7 @@ function render() {
     h = '<h3>Online now</h3>' + Object.values(online).map(o => `<div class="row"><span>${o.name}</span><span>Lv ${o.lv}</span></div>`).join('')
       + '<h3>Island leaderboard</h3>' + (board || '<small>No islands claimed yet.</small>');
   }
-  if (tab === 'set') h = '<h3>Field Manual</h3><p><small>WASD / arrows: move. B: board boat. F: fish. M: territory. N: naval command. G: develop. A: aquarium. P: players. I: supplies. Enter: chat.</small></p><button id="lo">Sign out</button>';
+  if (tab === 'set') h = '<h3>Field Manual</h3><p><small>WASD / arrows: move. B: board boat. F: fish. M: territory. N: naval command. G: develop. Aquarium: open from the menu. P: players. I: supplies. Enter: chat.</small></p><button id="lo">Sign out</button>';
   p.innerHTML = h + '<p><button class="alt" id="cl">Close</button></p>';
 }
 async function sell(f, q) {
@@ -631,7 +631,7 @@ addEventListener('resize', fit); fit();
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || !started) return;
   const k = e.key.toLowerCase(); keys[k] = 1;
-  const T = {i:'inv', m:'map', p:'ppl', n:'fleet', g:'build', a:'aquarium'};
+  const T = {i:'inv', m:'map', p:'ppl', n:'fleet', g:'build'};
   if (k === 'f') cast(); if (k === 'b') boat();
   if (k === 'enter') { e.preventDefault(); $('chat').focus(); }
   if (EMO[+k - 1]) emote(+k - 1);
